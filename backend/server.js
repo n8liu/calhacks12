@@ -249,12 +249,25 @@ app.post('/analyze', async (req, res) => {
       credibility = {
         score: 0.5,
         label: 'Unknown',
-        why: 'Credibility analysis temporarily unavailable. This does not reflect on the source quality.',
+        overall_assessment: 'Credibility analysis temporarily unavailable. This does not reflect on the source quality.',
+        website_analysis: {
+          type: 'Unable to analyze at this time',
+          reputation: 'Unable to analyze at this time',
+          editorial_standards: 'Unable to analyze at this time',
+          potential_conflicts: 'Unable to analyze at this time'
+        },
         author_analysis: {
           expertise: 'Unable to analyze at this time',
           background: 'Unable to analyze at this time',
           reputation_signals: 'Unable to analyze at this time',
           potential_bias: 'Unable to analyze at this time'
+        },
+        content_analysis: {
+          evidence_quality: 'Unable to analyze at this time',
+          tone: 'Unable to analyze at this time',
+          fact_vs_opinion: 'Unable to analyze at this time',
+          logical_reasoning: 'Unable to analyze at this time',
+          balance: 'Unable to analyze at this time'
         }
       };
     }
@@ -471,62 +484,82 @@ async function getCredibilityFromClaude(content, metadata, url) {
       }
     }
 
-    const prompt = `You are a careful media literacy assistant. You assess credibility and bias, not political alignment. Be specific and calm.
+    const prompt = `You are a careful media literacy assistant. You assess credibility and bias in three layers: Website, Author, and Content. Be specific and calm.
 
-We have an article/video with this metadata:
-
+METADATA:
 Source: ${metadata?.source || new URL(url).hostname}
 Author: ${metadata?.author || 'Unknown'}
 Channel: ${metadata?.channel || 'Unknown'}
 Published: ${metadata?.published_at || 'Unknown'}
 
-Content:
+ARTICLE CONTENT:
 ${content.substring(0, 6000)}
 ${authorInfoText}
 
-TASK:
-1. Rate credibility 0.0 (not trustworthy) → 1.0 (highly trustworthy).
-2. Provide a one-word label: "Reliable", "Mixed", or "Low".
-3. Explain in 2-4 sentences WHY you chose this, citing things like:
-   - Expertise / reputation of the source
-   - Emotional or manipulative language
-   - Presence/absence of data, citations, or verifiable specifics
-   - Whether it's reporting vs opinion
-4. Mention any obvious bias.
-5. Analyze the AUTHOR/CREATOR:
-   ${authorSources.length > 0 ? 
-     `- Use the WEB RESEARCH provided above to inform your analysis
-   - Cite sources using [1], [2], [3] etc. to reference the sources listed
-   - What expertise or credentials do they have?
-   - What's their background and professional history?
-   - Are they an established journalist, blogger, content creator, or academic?
-   - Any conflicts of interest or biases evident?` :
-     `- Analyze based on the article content and writing style
-   - Note that no web research was available
-   - Assess what type of author this appears to be based on the content
-   - Look for any biases evident in the writing`}
+TASK - Perform a THREE-TIER analysis:
 
-IMPORTANT: When citing information about the author, use [1], [2], [3] etc. to reference the sources in the WEB RESEARCH section above.
+TIER 1: WEBSITE/SOURCE ANALYSIS
+Analyze the publication/platform itself:
+- What type of source is this? (Major news outlet, blog, academic, etc.)
+- What is its general reputation and track record?
+- Known editorial standards or biases?
+- Funding model and potential conflicts?
+
+TIER 2: AUTHOR ANALYSIS
+${authorSources.length > 0 ? 
+  `Using the WEB RESEARCH provided above:
+- What expertise or credentials does the author have? [cite with [1], [2]]
+- Professional background and history? [cite]
+- Established journalist, blogger, academic, or content creator?
+- Any conflicts of interest or biases? [cite]` :
+  `Based on the article content and writing style:
+- What type of author does this appear to be?
+- What expertise is evident from the writing?
+- Any biases evident in the writing style?`}
+
+TIER 3: ARTICLE CONTENT ANALYSIS
+Analyze THIS specific article's reliability:
+- Quality of evidence and citations in THIS article
+- Emotional/manipulative language vs neutral reporting
+- Factual claims vs speculation/opinion
+- Logical reasoning and argumentation quality
+- Balance and fairness in presenting information
+
+FINAL RATING:
+Combine all three tiers to give an overall credibility score 0.0-1.0 and label.
 
 Return JSON:
 {
   "score": 0.82,
   "label": "Reliable",
-  "why": "...",
+  "overall_assessment": "Brief 2-3 sentence summary of overall credibility",
+  "website_analysis": {
+    "type": "Major news outlet / Blog / Academic / etc.",
+    "reputation": "Assessment of source's general credibility",
+    "editorial_standards": "Known standards or lack thereof",
+    "potential_conflicts": "Funding, ownership, or bias concerns"
+  },
   "author_analysis": {
     "expertise": "Assessment with citations like [1] or [2]",
-    "background": "What type of author/creator with citations",
-    "reputation_signals": "Signs of credibility with citations",
-    "potential_bias": "Conflicts of interest with citations",
-    "sources_used": ["Brief description of source [1]", "Brief description of source [2]"]
+    "background": "Professional history with citations",
+    "reputation_signals": "Credibility indicators with citations",
+    "potential_bias": "Author-specific biases with citations"
+  },
+  "content_analysis": {
+    "evidence_quality": "How well is this article supported?",
+    "tone": "Neutral reporting vs emotional/opinion",
+    "fact_vs_opinion": "Balance of factual vs speculative claims",
+    "logical_reasoning": "Quality of argumentation",
+    "balance": "Fairness in presenting different perspectives"
   }
 }
 
+IMPORTANT: Cite author research sources using [1], [2], [3].
 Return ONLY the JSON, no other text.`;
 
     const message = await anthropic.messages.create({
       model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 1536,
+      max_tokens: 2048,
       messages: [{
         role: 'user',
         content: prompt
@@ -559,12 +592,25 @@ Return ONLY the JSON, no other text.`;
     return {
       score: 0.5,
       label: 'Unknown',
-      why: 'Unable to assess credibility at this time.',
+      overall_assessment: 'Unable to assess credibility at this time.',
+      website_analysis: {
+        type: 'Unable to analyze',
+        reputation: 'Unable to analyze',
+        editorial_standards: 'Unable to analyze',
+        potential_conflicts: 'Unable to analyze'
+      },
       author_analysis: {
         expertise: 'Unable to analyze',
         background: 'Unable to analyze',
         reputation_signals: 'Unable to analyze',
         potential_bias: 'Unable to analyze'
+      },
+      content_analysis: {
+        evidence_quality: 'Unable to analyze',
+        tone: 'Unable to analyze',
+        fact_vs_opinion: 'Unable to analyze',
+        logical_reasoning: 'Unable to analyze',
+        balance: 'Unable to analyze'
       }
     };
   }

@@ -18,7 +18,7 @@ function injectUI() {
   // Create floating button
   const floatingButton = document.createElement('button');
   floatingButton.id = 'smart-summary-toggle';
-  floatingButton.innerHTML = '🧠';
+  floatingButton.innerHTML = 'S';
   floatingButton.title = 'Open SmartSummary';
   container.appendChild(floatingButton);
   
@@ -39,13 +39,28 @@ function injectUI() {
     </div>
     <div class="smart-summary-content">
       <div id="tab-summary" class="tab-content active">
-        <div class="loading">Analyzing content...</div>
+        <div class="loading">
+          <div class="loading-bar-container">
+            <div class="loading-bar"></div>
+          </div>
+          <p class="loading-text">Analyzing content...</p>
+        </div>
       </div>
       <div id="tab-credibility" class="tab-content">
-        <div class="loading">Analyzing credibility...</div>
+        <div class="loading">
+          <div class="loading-bar-container">
+            <div class="loading-bar"></div>
+          </div>
+          <p class="loading-text">Analyzing credibility...</p>
+        </div>
       </div>
       <div id="tab-connections" class="tab-content">
-        <div class="loading">Finding connections...</div>
+        <div class="loading">
+          <div class="loading-bar-container">
+            <div class="loading-bar"></div>
+          </div>
+          <p class="loading-text">Finding connections...</p>
+        </div>
       </div>
       <div id="tab-chat" class="tab-content">
         <div class="chat-controls">
@@ -314,9 +329,26 @@ function extractYouTubeContent() {
 async function analyzeCurrentPage() {
   const pageData = extractPageContent();
   
-  // Show loading state
-  document.getElementById('tab-summary').innerHTML = '<div class="loading">Analyzing content...</div>';
-  document.getElementById('tab-credibility').innerHTML = '<div class="loading">Checking credibility...</div>';
+  // Show loading state with animated progress bars
+  const loadingHTML = `
+    <div class="loading">
+      <div class="loading-bar-container">
+        <div class="loading-bar"></div>
+      </div>
+      <p class="loading-text">Analyzing content...</p>
+    </div>
+  `;
+  const credibilityLoadingHTML = `
+    <div class="loading">
+      <div class="loading-bar-container">
+        <div class="loading-bar"></div>
+      </div>
+      <p class="loading-text">Checking credibility...</p>
+    </div>
+  `;
+  
+  document.getElementById('tab-summary').innerHTML = loadingHTML;
+  document.getElementById('tab-credibility').innerHTML = credibilityLoadingHTML;
   
   try {
     const response = await chrome.runtime.sendMessage({
@@ -337,6 +369,56 @@ async function analyzeCurrentPage() {
   }
 }
 
+function buildAllSourcesSection(data) {
+  const allSources = [];
+  
+  // Add original article
+  allSources.push({
+    title: data.source_meta?.title || document.title || 'Original Article',
+    url: window.location.href,
+    type: 'Primary Source',
+    icon: '📄'
+  });
+  
+  // Add author research sources
+  if (data.credibility?.author_sources && data.credibility.author_sources.length > 0) {
+    data.credibility.author_sources.forEach(source => {
+      allSources.push({
+        title: source.title,
+        url: source.url,
+        type: 'Author Research',
+        icon: '🔍'
+      });
+    });
+  }
+  
+  // Add any external sources mentioned (future: parse from summary/analysis)
+  // This will be enhanced when we detect links in the content
+  
+  if (allSources.length <= 1) return ''; // Only show if we have more than just the original article
+  
+  return `
+    <div class="all-sources-section">
+      <h3>All Sources</h3>
+      <p class="sources-description">Referenced sources used in this analysis • Click to open</p>
+      <div class="all-sources-list">
+        ${allSources.map((source, idx) => `
+          <a href="${source.url}" target="_blank" rel="noopener noreferrer" class="source-link">
+            <div class="source-link-content">
+              <span class="source-link-icon">${source.icon || '🔗'}</span>
+              <div class="source-link-info">
+                <div class="source-link-title">${source.title}</div>
+                <div class="source-link-type">${source.type}</div>
+              </div>
+            </div>
+            <span class="source-link-arrow">→</span>
+          </a>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function displayResults(data) {
   // Helper function to make citations clickable
   const makeCitationsClickable = (text, sources) => {
@@ -352,6 +434,9 @@ function displayResults(data) {
       return match;
     });
   };
+  
+  // Build all sources for summary tab too
+  const summarySourcesSection = buildAllSourcesSection(data);
   
   // Display summary
   document.getElementById('tab-summary').innerHTML = `
@@ -369,12 +454,22 @@ function displayResults(data) {
           ${data.source_meta.word_count ? `<p><strong>Word count:</strong> ${data.source_meta.word_count}</p>` : ''}
         </div>
       ` : ''}
+      ${summarySourcesSection}
     </div>
   `;
   
   // Display credibility
   const scorePercent = Math.round(data.credibility.score * 100);
-  const scoreColor = scorePercent >= 70 ? '#22c55e' : scorePercent >= 40 ? '#eab308' : '#ef4444';
+  
+  // Determine stroke color based on score (subtle, professional)
+  let strokeColor = '#111827'; // Default black
+  if (scorePercent >= 75) {
+    strokeColor = '#059669'; // Dark green for high scores
+  } else if (scorePercent >= 50) {
+    strokeColor = '#d97706'; // Dark amber for medium
+  } else {
+    strokeColor = '#dc2626'; // Dark red for low
+  }
   
   // Build author analysis section if available
   let authorSection = '';
@@ -383,10 +478,10 @@ function displayResults(data) {
   if (!hasAuthor) {
     // No author found - show informative message
     authorSection = `
-      <div class="author-analysis">
-        <h3>Author & Background</h3>
+      <div class="analysis-tier">
+        <h3>Author Analysis</h3>
         <div class="no-author-message">
-          <p>👤 <strong>No author information available</strong></p>
+          <p><strong>No author information available</strong></p>
           <p class="no-author-detail">This content does not have an identified author or the author information could not be extracted from the page.</p>
         </div>
       </div>
@@ -399,7 +494,7 @@ function displayResults(data) {
     if (data.credibility.author_sources && data.credibility.author_sources.length > 0) {
       sourcesHtml = `
         <div class="author-sources">
-          <h4>📚 Sources</h4>
+          <h4>Sources</h4>
           <div class="sources-list">
             ${data.credibility.author_sources.map(source => `
               <div class="source-item">
@@ -415,24 +510,24 @@ function displayResults(data) {
     }
     
     authorSection = `
-      <div class="author-analysis">
-        <h3>Author & Background</h3>
-        ${hasAuthor ? `<p class="author-name">📝 ${data.source_meta.author}</p>` : ''}
-        <div class="author-info">
-          <div class="author-field">
-            <strong>👤 Expertise</strong>
+      <div class="analysis-tier">
+        <h3>Author Analysis</h3>
+        ${hasAuthor ? `<p class="author-name">${data.source_meta.author}</p>` : ''}
+        <div class="tier-fields">
+          <div class="tier-field">
+            <strong>Expertise</strong>
             <p>${makeCitationsClickable(author.expertise, data.credibility.author_sources)}</p>
           </div>
-          <div class="author-field">
-            <strong>📋 Background</strong>
+          <div class="tier-field">
+            <strong>Background</strong>
             <p>${makeCitationsClickable(author.background, data.credibility.author_sources)}</p>
           </div>
-          <div class="author-field">
-            <strong>✓ Reputation Signals</strong>
+          <div class="tier-field">
+            <strong>Reputation Signals</strong>
             <p>${makeCitationsClickable(author.reputation_signals, data.credibility.author_sources)}</p>
           </div>
-          <div class="author-field">
-            <strong>⚠️ Potential Bias</strong>
+          <div class="tier-field">
+            <strong>Potential Bias</strong>
             <p>${makeCitationsClickable(author.potential_bias, data.credibility.author_sources)}</p>
           </div>
         </div>
@@ -441,20 +536,95 @@ function displayResults(data) {
     `;
   }
   
+  // Calculate circular progress bar values
+  const radius = 46; // SVG circle radius
+  const circumference = 2 * Math.PI * radius;
+  const progressOffset = circumference - (scorePercent / 100) * circumference;
+  
+  // Build comprehensive sources section
+  const allSourcesSection = buildAllSourcesSection(data);
+  
+  // Build website analysis section
+  const websiteSection = data.credibility.website_analysis ? `
+    <div class="analysis-tier">
+      <h3>Website & Source Analysis</h3>
+      <div class="tier-fields">
+        <div class="tier-field">
+          <strong>Source Type</strong>
+          <p>${data.credibility.website_analysis.type}</p>
+        </div>
+        <div class="tier-field">
+          <strong>Reputation</strong>
+          <p>${data.credibility.website_analysis.reputation}</p>
+        </div>
+        <div class="tier-field">
+          <strong>Editorial Standards</strong>
+          <p>${data.credibility.website_analysis.editorial_standards}</p>
+        </div>
+        <div class="tier-field">
+          <strong>Potential Conflicts</strong>
+          <p>${data.credibility.website_analysis.potential_conflicts}</p>
+        </div>
+      </div>
+    </div>
+  ` : '';
+  
+  // Build content analysis section
+  const contentSection = data.credibility.content_analysis ? `
+    <div class="analysis-tier">
+      <h3>Article Content Analysis</h3>
+      <div class="tier-fields">
+        <div class="tier-field">
+          <strong>Evidence Quality</strong>
+          <p>${data.credibility.content_analysis.evidence_quality}</p>
+        </div>
+        <div class="tier-field">
+          <strong>Tone</strong>
+          <p>${data.credibility.content_analysis.tone}</p>
+        </div>
+        <div class="tier-field">
+          <strong>Fact vs Opinion</strong>
+          <p>${data.credibility.content_analysis.fact_vs_opinion}</p>
+        </div>
+        <div class="tier-field">
+          <strong>Logical Reasoning</strong>
+          <p>${data.credibility.content_analysis.logical_reasoning}</p>
+        </div>
+        <div class="tier-field">
+          <strong>Balance</strong>
+          <p>${data.credibility.content_analysis.balance}</p>
+        </div>
+      </div>
+    </div>
+  ` : '';
+  
   document.getElementById('tab-credibility').innerHTML = `
     <div class="credibility-content">
-      <div class="credibility-score" style="color: ${scoreColor}">
+      <div class="credibility-score">
         <div class="score-circle">
-          <span class="score-number">${scorePercent}</span>
-          <span class="score-label">/100</span>
+          <svg width="100" height="100">
+            <circle class="score-circle-bg" cx="50" cy="50" r="${radius}"></circle>
+            <circle class="score-circle-progress" cx="50" cy="50" r="${radius}"
+                    stroke="${strokeColor}"
+                    stroke-dasharray="${circumference}"
+                    stroke-dashoffset="${progressOffset}">
+            </circle>
+          </svg>
+          <div class="score-content">
+            <div class="score-number" style="color: ${strokeColor}">${scorePercent}</div>
+            <div class="score-label">/100</div>
+          </div>
         </div>
         <div class="score-badge">${data.credibility.label}</div>
       </div>
       <div class="credibility-explanation">
         <h3>Overall Assessment</h3>
-        <p>${makeCitationsClickable(data.credibility.why, data.credibility.author_sources)}</p>
+        <p>${makeCitationsClickable(data.credibility.overall_assessment || data.credibility.why || 'Analysis in progress...', data.credibility.author_sources)}</p>
       </div>
+      ${websiteSection}
       ${authorSection}
+      ${contentSection}
+      ${allSourcesSection}
     </div>
   `;
   
@@ -487,7 +657,7 @@ async function loadConnections(url) {
     console.error('Failed to load connections:', error);
     document.getElementById('tab-connections').innerHTML = `
       <div class="connections-empty">
-        <p>🔗 No connections found yet</p>
+        <p>No connections found yet</p>
         <p class="connections-detail">As you read more articles, SmartSummary will discover connections between them based on topics, authors, and themes.</p>
       </div>
     `;
@@ -498,12 +668,34 @@ function displayConnections(connections) {
   if (!connections || connections.length === 0) {
     document.getElementById('tab-connections').innerHTML = `
       <div class="connections-empty">
-        <p>🔗 No connections found yet</p>
+        <p>No connections found yet</p>
         <p class="connections-detail">As you read more articles, SmartSummary will discover connections between them based on topics, authors, and themes.</p>
       </div>
     `;
     return;
   }
+  
+  // Build connected sources section
+  const connectedSourcesHtml = connections.length > 0 ? `
+    <div class="all-sources-section">
+      <h3>Connected Articles</h3>
+      <p class="sources-description">Quick access to related articles</p>
+      <div class="all-sources-list">
+        ${connections.map((conn, idx) => `
+          <a href="${conn.url}" target="_blank" rel="noopener noreferrer" class="source-link">
+            <div class="source-link-content">
+              <span class="source-link-icon">📄</span>
+              <div class="source-link-info">
+                <div class="source-link-title">${conn.title || 'Article'}</div>
+                <div class="source-link-type">${conn.source}</div>
+              </div>
+            </div>
+            <span class="source-link-arrow">→</span>
+          </a>
+        `).join('')}
+      </div>
+    </div>
+  ` : '';
   
   const connectionsHtml = `
     <div class="connections-content">
@@ -519,13 +711,14 @@ function displayConnections(connections) {
                 <p class="connection-meta">${conn.source} • ${new Date(conn.analyzed_at).toLocaleDateString()}</p>
               </div>
             </div>
-            <p class="connection-reason">🔗 ${conn.connectionReason}</p>
+            <p class="connection-reason">${conn.connectionReason}</p>
             <div class="connection-topics">
               ${(conn.topics || []).map(topic => `<span class="topic-tag">${topic}</span>`).join('')}
             </div>
           </div>
         `).join('')}
       </div>
+      ${connectedSourcesHtml}
     </div>
   `;
   
@@ -555,7 +748,10 @@ async function sendChatMessage() {
   // Add loading indicator
   chatHistory.innerHTML += `
     <div class="message assistant-message loading-message">
-      <p>Thinking...</p>
+      <div class="loading-bar-container">
+        <div class="loading-bar"></div>
+      </div>
+      <p class="loading-text" style="margin-top: 8px; font-size: 13px;">Thinking...</p>
     </div>
   `;
   
