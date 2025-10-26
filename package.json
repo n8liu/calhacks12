@@ -1,0 +1,16 @@
+{
+  "name": "smartsummary",
+  "version": "0.1.0",
+  "description": "AI co-pilot for whatever you're reading/watching",
+  "private": true,
+  "scripts": {
+    "backend": "cd backend && npm start",
+    "backend:dev": "cd backend && npm run dev",
+    "install:backend": "cd backend && npm install",
+    "install:all": "npm run install:backend"
+  },
+  "keywords": ["ai", "chrome-extension", "summarization", "credibility-check"],
+  "author": "",
+  "license": "MIT"
+}
+
