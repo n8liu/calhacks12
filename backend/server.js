@@ -58,10 +58,46 @@ app.post('/analyze', async (req, res) => {
     const cleanedContent = cleanContent(content);
 
     // Parallel: Get summary from Gemini and credibility from Claude
-    const [summaryResult, credibilityResult] = await Promise.all([
+    // Use allSettled so one failure doesn't break everything
+    const [summaryResult, credibilityResult] = await Promise.allSettled([
       getSummaryFromGemini(cleanedContent, metadata),
       getCredibilityFromClaude(cleanedContent, metadata, url)
     ]);
+
+    // Handle summary result (Gemini)
+    let summary, bullets;
+    if (summaryResult.status === 'fulfilled') {
+      summary = summaryResult.value.summary;
+      bullets = summaryResult.value.bullets;
+      console.log('✅ Gemini summary successful');
+    } else {
+      console.warn('⚠️  Gemini failed, using Claude for summary');
+      // Fallback: Try to get summary from Claude
+      try {
+        const claudeSummary = await getSummaryFromClaude(cleanedContent, metadata);
+        summary = claudeSummary.summary;
+        bullets = claudeSummary.bullets;
+        console.log('✅ Claude summary fallback successful');
+      } catch (fallbackError) {
+        console.error('❌ Both Gemini and Claude summary failed:', fallbackError);
+        summary = 'Summary temporarily unavailable. The content has been saved and you can still chat about it.';
+        bullets = ['AI summarization is currently experiencing issues', 'You can still use the chat feature to ask questions'];
+      }
+    }
+
+    // Handle credibility result (Claude)
+    let credibility;
+    if (credibilityResult.status === 'fulfilled') {
+      credibility = credibilityResult.value;
+      console.log('✅ Claude credibility check successful');
+    } else {
+      console.warn('⚠️  Claude credibility check failed:', credibilityResult.reason);
+      credibility = {
+        score: 0.5,
+        label: 'Unknown',
+        why: 'Credibility analysis temporarily unavailable. This does not reflect on the source quality.'
+      };
+    }
 
     // Create conversation
     const conversationId = uuidv4();
@@ -75,9 +111,9 @@ app.post('/analyze', async (req, res) => {
 
     // Build response
     const result = {
-      summary: summaryResult.summary,
-      bullets: summaryResult.bullets,
-      credibility: credibilityResult,
+      summary,
+      bullets,
+      credibility,
       source_meta: {
         title: metadata?.title,
         author: metadata?.author,
@@ -146,7 +182,11 @@ app.post('/chat', async (req, res) => {
 // Helper: Get summary from Gemini
 async function getSummaryFromGemini(content, metadata) {
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    if (!process.env.GOOGLE_API_KEY || process.env.GOOGLE_API_KEY === 'your_gemini_api_key_here') {
+      throw new Error('Gemini API key not configured');
+    }
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const prompt = `You extract factual summaries from source material. You do not add external facts.
 
@@ -181,12 +221,9 @@ Return ONLY the JSON, no other text.`;
     
     throw new Error('Failed to parse Gemini response');
   } catch (error) {
-    console.error('Gemini error:', error);
-    // Fallback
-    return {
-      summary: 'Unable to generate summary. Please try again.',
-      bullets: ['Content analysis temporarily unavailable']
-    };
+    console.error('Gemini error:', error.message);
+    // Re-throw so Promise.allSettled can catch it and trigger Claude fallback
+    throw error;
   }
 }
 
@@ -250,6 +287,49 @@ Return ONLY the JSON, no other text.`;
       why: 'Unable to assess credibility at this time.'
     };
   }
+}
+
+// Helper: Get summary from Claude (fallback when Gemini fails)
+async function getSummaryFromClaude(content, metadata) {
+  const prompt = `You extract factual summaries from source material. You do not add external facts.
+
+SOURCE METADATA:
+Title: ${metadata?.title || 'Unknown'}
+Author: ${metadata?.author || 'Unknown'}
+Published: ${metadata?.published_at || 'Unknown'}
+
+FULL TEXT:
+${content.substring(0, 6000)}
+
+TASK:
+1. Give a 2-3 sentence plain-English summary of the source. No hype.
+2. Give 5 concise bullet points of the main claims/conclusions from the source, using ONLY what appears in the source.
+3. Return valid JSON with:
+{
+  "summary": "...",
+  "bullets": ["...", "...", "...", "...", "..."]
+}
+
+Return ONLY the JSON, no other text.`;
+
+  const message = await anthropic.messages.create({
+    model: 'claude-3-5-sonnet-20241022',
+    max_tokens: 1024,
+    messages: [{
+      role: 'user',
+      content: prompt
+    }]
+  });
+
+  const text = message.content[0].text;
+  
+  // Parse JSON from response
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    return JSON.parse(jsonMatch[0]);
+  }
+  
+  throw new Error('Failed to parse Claude summary response');
 }
 
 // Helper: Chat with Claude
