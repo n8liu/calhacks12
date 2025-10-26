@@ -407,17 +407,15 @@ function buildAllSourcesSection(data) {
   // Add any external sources mentioned (future: parse from summary/analysis)
   // This will be enhanced when we detect links in the content
   
-  if (allSources.length <= 1) return ''; // Only show if we have more than just the original article
+  if (allSources.length === 0) return ''; // Only skip if no sources at all
   
   return `
     <div class="all-sources-section">
-      <h3>All Sources</h3>
-      <p class="sources-description">Referenced sources used in this analysis • Click to open</p>
+      <h3>Sources</h3>
       <div class="all-sources-list">
         ${allSources.map((source, idx) => `
           <a href="${source.url}" target="_blank" rel="noopener noreferrer" class="source-link">
             <div class="source-link-content">
-              <span class="source-link-icon">${source.icon || '🔗'}</span>
               <div class="source-link-info">
                 <div class="source-link-title">${source.title}</div>
                 <div class="source-link-type">${source.type}</div>
@@ -747,13 +745,11 @@ function displayConnections(connections) {
   // Build connected sources section
   const connectedSourcesHtml = connections.length > 0 ? `
     <div class="all-sources-section">
-      <h3>Connected Articles</h3>
-      <p class="sources-description">Quick access to related articles</p>
+      <h3>Quick Access</h3>
       <div class="all-sources-list">
         ${connections.map((conn, idx) => `
           <a href="${conn.url}" target="_blank" rel="noopener noreferrer" class="source-link">
             <div class="source-link-content">
-              <span class="source-link-icon">📄</span>
               <div class="source-link-info">
                 <div class="source-link-title">${conn.title || 'Article'}</div>
                 <div class="source-link-type">${conn.source}</div>
