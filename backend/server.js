@@ -211,11 +211,12 @@ app.post('/analyze', async (req, res) => {
 
     const cleanedContent = cleanContent(content);
 
-    // Parallel: Get summary from Gemini and credibility from Claude
+    // Parallel: Get summary from Gemini, credibility from Claude, and fact check
     // Use allSettled so one failure doesn't break everything
-    const [summaryResult, credibilityResult] = await Promise.allSettled([
+    const [summaryResult, credibilityResult, factCheckResult] = await Promise.allSettled([
       getSummaryFromGemini(cleanedContent, metadata),
-      getCredibilityFromClaude(cleanedContent, metadata, url)
+      getCredibilityFromClaude(cleanedContent, metadata, url),
+      factCheckArticle(cleanedContent, metadata)
     ]);
 
     // Handle summary result (Gemini)
@@ -272,6 +273,24 @@ app.post('/analyze', async (req, res) => {
       };
     }
 
+    // Handle fact check result
+    let factCheck;
+    if (factCheckResult.status === 'fulfilled') {
+      factCheck = factCheckResult.value;
+      console.log(`✅ Fact check completed with ${factCheck.claims.length} claims verified`);
+      
+      // Add fact check sources to credibility response
+      if (factCheck.sources && factCheck.sources.length > 0) {
+        credibility.fact_check_sources = factCheck.sources;
+      }
+    } else {
+      console.warn('⚠️  Fact check failed:', factCheckResult.reason);
+      factCheck = {
+        claims: [],
+        sources: []
+      };
+    }
+
     // Create conversation
     const conversationId = uuidv4();
     conversations.set(conversationId, {
@@ -287,6 +306,7 @@ app.post('/analyze', async (req, res) => {
       summary,
       bullets,
       credibility,
+      fact_check: factCheck,
       source_meta: {
         title: metadata?.title,
         author: metadata?.author,
@@ -453,6 +473,114 @@ async function searchAuthorInfo(authorName, source) {
   } catch (error) {
     console.error('Gemini search error:', error.message);
     return null;
+  }
+}
+
+// Helper: Fact check article claims using Gemini 2.5 Flash Grounding
+async function factCheckArticle(content, metadata) {
+  try {
+    const model = genAI.getGenerativeModel({ 
+      model: 'gemini-2.5-flash',
+      tools: [{
+        googleSearch: {}
+      }]
+    });
+
+    // Extract key topics/entities from the article for better search targeting
+    const title = metadata?.title || 'Unknown';
+    const author = metadata?.author || 'Unknown';
+    const source = metadata?.source || 'Unknown';
+    
+    const prompt = `You are a fact-checking assistant. You MUST use the googleSearch tool to search the web in real-time to verify claims from this article.
+
+Article Title: ${title}
+Author: ${author}
+Source: ${source}
+
+Article Content:
+${content.substring(0, 8000)}
+
+CRITICAL INSTRUCTIONS:
+1. You MUST use the googleSearch tool to search the web for each factual claim
+2. DO NOT rely on training data - search the web NOW for real-time verification
+3. Identify 3-5 key factual claims that can be independently verified
+4. For each claim, perform a web search to find reliable sources
+5. Use the search results to verify, contradict, or provide context
+
+For each claim you identify, search the web with queries like:
+- "[specific claim from article] verification"
+- "[key fact] fact check"
+- "[statistic or claim] confirmed"
+- "[topic] reliable sources"
+
+IMPORTANT: You MUST use the googleSearch tool. Return ONLY a JSON array:
+[
+  {
+    "claim": "Exact factual claim from the article",
+    "status": "Confirmed" | "Partially Confirmed" | "Uncertain" | "Contradicted",
+    "assessment": "Your verification based on web search results",
+    "reliability": 0.0-1.0,
+    "search_queries": ["query used for verification"]
+  }
+]
+
+Focus on verifiable factual claims (statistics, events, data, statements of fact), not opinions.`;
+
+    console.log('🔍 Fact-checking article with real-time web search...');
+    console.log(`   Article: ${title.substring(0, 60)}...`);
+    
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    console.log('✅ Fact-check response received');
+    
+    // Extract grounding metadata (sources used in real-time)
+    const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
+    let verificationSources = [];
+    
+    if (groundingMetadata?.groundingChunks) {
+      console.log(`   Found ${groundingMetadata.groundingChunks.length} grounding chunks`);
+      
+      verificationSources = groundingMetadata.groundingChunks
+        .filter(chunk => chunk.web)
+        .map((chunk, index) => {
+          const source = {
+            index: index + 1,
+            title: chunk.web.title || 'Web Source',
+            url: chunk.web.uri,
+            snippet: chunk.web.content || ''
+          };
+          console.log(`   Source ${source.index}: ${source.title}`);
+          return source;
+        });
+      
+      console.log(`   Total web sources extracted: ${verificationSources.length}`);
+    } else {
+      console.log('   No grounding chunks found - search may not have been triggered');
+    }
+    
+    // Parse JSON from response
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    let verifiedClaims = [];
+    
+    if (jsonMatch) {
+      verifiedClaims = JSON.parse(jsonMatch[0]);
+      console.log(`   Verified ${verifiedClaims.length} claims`);
+    }
+    
+    // Return structured result
+    return {
+      claims: verifiedClaims,
+      sources: verificationSources.slice(0, 15) // Limit to 15 sources
+    };
+    
+  } catch (error) {
+    console.error('Fact-checking error:', error.message);
+    return {
+      claims: [],
+      sources: []
+    };
   }
 }
 

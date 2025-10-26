@@ -824,3 +824,114 @@
   transform: scale(0.98);
 }
 
+/* Fact Check Section */
+.fact-check-intro {
+  font-size: 14px;
+  color: #6b7280;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.fact-check-claims {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fact-check-claim {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  transition: all 0.2s;
+}
+
+.fact-check-claim:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.fact-check-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.fact-check-number {
+  font-weight: 600;
+  font-size: 14px;
+  color: #374151;
+}
+
+.fact-check-status {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.fact-check-statement {
+  font-size: 14px;
+  color: #111827;
+  margin: 8px 0;
+  line-height: 1.5;
+}
+
+.fact-check-statement strong {
+  color: #374151;
+  font-weight: 600;
+}
+
+.fact-check-assessment {
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.5;
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 2px solid #e5e7eb;
+}
+
+.fact-check-reliability {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.fact-check-reliability span {
+  display: inline-block;
+  padding: 4px 8px;
+  background: #f3f4f6;
+  border-radius: 4px;
+}
+
+.fact-check-queries {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.fact-check-queries-label {
+  font-size: 12px;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.fact-check-query-tag {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  font-size: 11px;
+  color: #1e40af;
+  font-weight: 500;
+}
+

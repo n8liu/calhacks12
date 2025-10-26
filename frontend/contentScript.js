@@ -392,6 +392,18 @@ function buildAllSourcesSection(data) {
     });
   }
   
+  // Add fact check sources
+  if (data.fact_check?.sources && data.fact_check.sources.length > 0) {
+    data.fact_check.sources.forEach(source => {
+      allSources.push({
+        title: source.title,
+        url: source.url,
+        type: 'Fact Check',
+        icon: '✅'
+      });
+    });
+  }
+  
   // Add any external sources mentioned (future: parse from summary/analysis)
   // This will be enhanced when we detect links in the content
   
@@ -544,6 +556,62 @@ function displayResults(data) {
   // Build comprehensive sources section
   const allSourcesSection = buildAllSourcesSection(data);
   
+  // Build fact check section
+  let factCheckSection = '';
+  if (data.fact_check && data.fact_check.claims && data.fact_check.claims.length > 0) {
+    const claims = data.fact_check.claims;
+    
+    const claimsHtml = claims.map((claim, idx) => {
+      let statusColor = '#6b7280';
+      let statusIcon = '❓';
+      
+      if (claim.status === 'Confirmed') {
+        statusColor = '#059669';
+        statusIcon = '✅';
+      } else if (claim.status === 'Partially Confirmed') {
+        statusColor = '#d97706';
+        statusIcon = '⚠️';
+      } else if (claim.status === 'Contradicted') {
+        statusColor = '#dc2626';
+        statusIcon = '❌';
+      }
+      
+      return `
+        <div class="fact-check-claim">
+          <div class="fact-check-header">
+            <span class="fact-check-number">${idx + 1}</span>
+            <span class="fact-check-status" style="color: ${statusColor}">
+              ${statusIcon} ${claim.status}
+            </span>
+          </div>
+          <p class="fact-check-statement"><strong>Claim:</strong> ${claim.claim}</p>
+          <p class="fact-check-assessment">${claim.assessment}</p>
+          ${claim.search_queries && claim.search_queries.length > 0 ? `
+            <div class="fact-check-queries">
+              <span class="fact-check-queries-label">Search queries:</span>
+              ${claim.search_queries.map(q => `<span class="fact-check-query-tag">${q}</span>`).join('')}
+            </div>
+          ` : ''}
+          ${claim.reliability !== undefined ? `
+            <div class="fact-check-reliability">
+              <span>Reliability score: ${Math.round(claim.reliability * 100)}%</span>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+    
+    factCheckSection = `
+      <div class="analysis-tier">
+        <h3>Fact Check Report</h3>
+        <p class="fact-check-intro">Verified key claims against real-time web sources using Gemini 2.5 Flash with Google Search. Each claim was independently verified through live web searches.</p>
+        <div class="fact-check-claims">
+          ${claimsHtml}
+        </div>
+      </div>
+    `;
+  }
+  
   // Build website analysis section
   const websiteSection = data.credibility.website_analysis ? `
     <div class="analysis-tier">
@@ -621,6 +689,7 @@ function displayResults(data) {
         <h3>Overall Assessment</h3>
         <p>${makeCitationsClickable(data.credibility.overall_assessment || data.credibility.why || 'Analysis in progress...', data.credibility.author_sources)}</p>
       </div>
+      ${factCheckSection}
       ${websiteSection}
       ${authorSection}
       ${contentSection}
