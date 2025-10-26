@@ -29,7 +29,10 @@ function injectUI() {
   sidebar.innerHTML = `
     <div class="smart-summary-header">
       <h2>DeepDive</h2>
-      <button id="smart-summary-close">×</button>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button id="theme-toggle" title="Toggle theme">🌙</button>
+        <button id="smart-summary-close">×</button>
+      </div>
     </div>
     <div class="smart-summary-tabs">
       <button class="tab-btn active" data-tab="summary">Summary</button>
@@ -85,6 +88,10 @@ function injectUI() {
   // Add event listeners
   floatingButton.addEventListener('click', handleButtonClick);
   document.getElementById('smart-summary-close').addEventListener('click', toggleSidebar);
+  document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+  
+  // Initialize theme
+  initTheme();
   
   // Make button draggable
   makeDraggable(floatingButton);
@@ -247,6 +254,33 @@ function switchTab(tabName) {
   
   document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
   document.getElementById(`tab-${tabName}`).classList.add('active');
+}
+
+function initTheme() {
+  const savedTheme = localStorage.getItem('deepdive-theme');
+  const themeToggle = document.getElementById('theme-toggle');
+  
+  if (savedTheme === 'dark') {
+    document.getElementById('smart-summary-root').classList.add('dark-mode');
+    themeToggle.textContent = '☀️';
+  } else {
+    themeToggle.textContent = '🌙';
+  }
+}
+
+function toggleTheme() {
+  const root = document.getElementById('smart-summary-root');
+  const themeToggle = document.getElementById('theme-toggle');
+  
+  root.classList.toggle('dark-mode');
+  
+  if (root.classList.contains('dark-mode')) {
+    localStorage.setItem('deepdive-theme', 'dark');
+    themeToggle.textContent = '☀️';
+  } else {
+    localStorage.setItem('deepdive-theme', 'light');
+    themeToggle.textContent = '🌙';
+  }
 }
 
 // Extract content from the current page
