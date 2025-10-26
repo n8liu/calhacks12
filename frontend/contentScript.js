@@ -18,7 +18,7 @@ function injectUI() {
   // Create floating button
   const floatingButton = document.createElement('button');
   floatingButton.id = 'smart-summary-toggle';
-  floatingButton.innerHTML = 'S';
+  floatingButton.innerHTML = 'DD';
   floatingButton.title = 'Open DeepDive';
   container.appendChild(floatingButton);
   
@@ -448,25 +448,58 @@ function displayResults(data) {
   // Build all sources for summary tab too
   const summarySourcesSection = buildAllSourcesSection(data);
   
-  // Display summary
+  // Display summary with action buttons
   document.getElementById('tab-summary').innerHTML = `
     <div class="summary-content">
-      <h3>Quick Summary</h3>
-      <p>${data.summary}</p>
-      <h3>Key Points</h3>
-      <ul>
-        ${data.bullets.map(bullet => `<li>${bullet}</li>`).join('')}
-      </ul>
-      ${data.source_meta ? `
-        <div class="source-meta">
-          ${data.source_meta.author ? `<p><strong>Author:</strong> ${data.source_meta.author}</p>` : ''}
-          ${data.source_meta.published_at ? `<p><strong>Published:</strong> ${data.source_meta.published_at}</p>` : ''}
-          ${data.source_meta.word_count ? `<p><strong>Word count:</strong> ${data.source_meta.word_count}</p>` : ''}
-        </div>
-      ` : ''}
-      ${summarySourcesSection}
+      <div class="summary-actions">
+        <button class="summary-action-btn" id="copy-summary" title="Copy summary to clipboard">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          Copy
+        </button>
+        <button class="summary-action-btn" id="highlight-summary" title="Highlight key points on page">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 13l3 3 7-7"></path>
+            <path d="M3 3v18h18"></path>
+          </svg>
+          Highlight
+        </button>
+        <button class="summary-action-btn" id="share-summary" title="Share summary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="18" cy="5" r="3"></circle>
+            <circle cx="6" cy="12" r="3"></circle>
+            <circle cx="18" cy="19" r="3"></circle>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+          </svg>
+          Share
+        </button>
+      </div>
+      <div id="summary-text">
+        <h3>Quick Summary</h3>
+        <p>${data.summary}</p>
+        <h3>Key Points</h3>
+        <ul>
+          ${data.bullets.map(bullet => `<li>${bullet}</li>`).join('')}
+        </ul>
+        ${data.source_meta ? `
+          <div class="source-meta">
+            ${data.source_meta.author ? `<p><strong>Author:</strong> ${data.source_meta.author}</p>` : ''}
+            ${data.source_meta.published_at ? `<p><strong>Published:</strong> ${data.source_meta.published_at}</p>` : ''}
+            ${data.source_meta.word_count ? `<p><strong>Word count:</strong> ${data.source_meta.word_count}</p>` : ''}
+          </div>
+        ` : ''}
+        ${summarySourcesSection}
+      </div>
     </div>
   `;
+  
+  // Add event listeners for summary actions
+  document.getElementById('copy-summary').addEventListener('click', () => copySummary(data));
+  document.getElementById('highlight-summary').addEventListener('click', () => highlightSummary(data));
+  document.getElementById('share-summary').addEventListener('click', () => shareSummary(data));
   
   // Display credibility
   const scorePercent = Math.round(data.credibility.score * 100);
@@ -788,6 +821,168 @@ function displayConnections(connections) {
   `;
   
   document.getElementById('tab-connections').innerHTML = connectionsHtml;
+}
+
+// Copy summary to clipboard
+function copySummary(data) {
+  const summaryText = `
+${data.summary}
+
+Key Points:
+${data.bullets.map(bullet => `• ${bullet}`).join('\n')}
+
+Source: ${window.location.href}
+${data.source_meta?.author ? `Author: ${data.source_meta.author}` : ''}
+${data.source_meta?.published_at ? `Published: ${data.source_meta.published_at}` : ''}
+  `.trim();
+  
+  navigator.clipboard.writeText(summaryText).then(() => {
+    const btn = document.getElementById('copy-summary');
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = `
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+      Copied!
+    `;
+    btn.style.background = '#d1fae5';
+    setTimeout(() => {
+      btn.innerHTML = originalHtml;
+      btn.style.background = '';
+    }, 2000);
+  }).catch(err => {
+    console.error('Failed to copy:', err);
+    alert('Failed to copy to clipboard');
+  });
+}
+
+// Highlight key points on the page
+let highlightElements = [];
+
+function highlightSummary(data) {
+  const btn = document.getElementById('highlight-summary');
+  
+  if (btn.classList.contains('active')) {
+    // Already highlighted, clear them
+    clearHighlights();
+    btn.classList.remove('active');
+    btn.innerHTML = `
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 13l3 3 7-7"></path>
+        <path d="M3 3v18h18"></path>
+      </svg>
+      Highlight
+    `;
+    return;
+  }
+  
+  // Clear any existing highlights first
+  clearHighlights();
+  
+  // Add highlights
+  btn.classList.add('active');
+  btn.innerHTML = `
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"></polyline>
+    </svg>
+    Clear
+  `;
+  
+  // Extract key phrases from bullets for searching
+  const keyPhrases = data.bullets.flatMap(bullet => {
+    // Extract meaningful words (more than 3 characters)
+    const words = bullet.match(/\b\w{4,}\b/g) || [];
+    return words.slice(0, 2).map(w => w.toLowerCase());
+  });
+  
+  // Walk through the DOM and highlight matching text
+  const walker = document.createTreeWalker(
+    document.body,
+    NodeFilter.SHOW_TEXT,
+    null,
+    false
+  );
+  
+  let node;
+  while (node = walker.nextNode()) {
+    const text = node.textContent.toLowerCase();
+    
+    // Check if this text node contains any of our key phrases
+    for (const phrase of keyPhrases) {
+      if (text.includes(phrase) && phrase.length > 0) {
+        const parent = node.parentElement;
+        
+        // Skip if already highlighted or in our sidebar
+        if (parent.closest('#smart-summary-root')) continue;
+        
+        try {
+          const highlight = document.createElement('mark');
+          highlight.className = 'deepdive-highlight';
+          highlight.style.backgroundColor = '#fef3c7';
+          highlight.style.color = '#92400e';
+          highlight.style.padding = '2px 4px';
+          highlight.style.borderRadius = '3px';
+          highlight.style.fontWeight = '500';
+          highlight.textContent = node.textContent;
+          
+          node.parentNode.replaceChild(highlight, node);
+          highlightElements.push(highlight);
+          break; // Only highlight once per node
+        } catch (e) {
+          console.warn('Could not highlight node:', e);
+        }
+      }
+    }
+  }
+  
+  // Scroll to first highlight
+  if (highlightElements.length > 0) {
+    highlightElements[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+function clearHighlights() {
+  highlightElements.forEach(el => {
+    const text = el.textContent;
+    const textNode = document.createTextNode(text);
+    el.parentNode.replaceChild(textNode, el);
+  });
+  highlightElements = [];
+}
+
+// Share summary
+function shareSummary(data) {
+  const shareText = `I found this interesting article: ${window.location.href}\n\n${data.summary}\n\nKey Points:\n${data.bullets.slice(0, 3).map(bullet => `• ${bullet}`).join('\n')}`;
+  
+  if (navigator.share) {
+    navigator.share({
+      title: document.title,
+      text: shareText,
+      url: window.location.href
+    }).catch(err => {
+      console.log('Share cancelled or failed:', err);
+    });
+  } else {
+    // Fallback: copy share link
+    navigator.clipboard.writeText(shareText).then(() => {
+      const btn = document.getElementById('share-summary');
+      const originalHtml = btn.innerHTML;
+      btn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        Copied!
+      `;
+      btn.style.background = '#d1fae5';
+      setTimeout(() => {
+        btn.innerHTML = originalHtml;
+        btn.style.background = '';
+      }, 2000);
+    }).catch(err => {
+      console.error('Failed to copy:', err);
+      alert('Sharing not available. Please copy manually.');
+    });
+  }
 }
 
 async function sendChatMessage() {
