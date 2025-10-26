@@ -34,6 +34,7 @@ function injectUI() {
     <div class="smart-summary-tabs">
       <button class="tab-btn active" data-tab="summary">Summary</button>
       <button class="tab-btn" data-tab="credibility">Credibility</button>
+      <button class="tab-btn" data-tab="connections">Connections</button>
       <button class="tab-btn" data-tab="chat">Ask AI</button>
     </div>
     <div class="smart-summary-content">
@@ -42,6 +43,9 @@ function injectUI() {
       </div>
       <div id="tab-credibility" class="tab-content">
         <div class="loading">Analyzing credibility...</div>
+      </div>
+      <div id="tab-connections" class="tab-content">
+        <div class="loading">Finding connections...</div>
       </div>
       <div id="tab-chat" class="tab-content">
         <div id="chat-history"></div>
@@ -220,6 +224,71 @@ function displayResults(data) {
   const scorePercent = Math.round(data.credibility.score * 100);
   const scoreColor = scorePercent >= 70 ? '#22c55e' : scorePercent >= 40 ? '#eab308' : '#ef4444';
   
+  // Build author analysis section if available
+  let authorSection = '';
+  const hasAuthor = data.source_meta?.author && data.source_meta.author !== 'Unknown' && data.source_meta.author.trim() !== '';
+  
+  if (!hasAuthor) {
+    // No author found - show informative message
+    authorSection = `
+      <div class="author-analysis">
+        <h3>Author & Background</h3>
+        <div class="no-author-message">
+          <p>👤 <strong>No author information available</strong></p>
+          <p class="no-author-detail">This content does not have an identified author or the author information could not be extracted from the page.</p>
+        </div>
+      </div>
+    `;
+  } else if (data.credibility.author_analysis) {
+    const author = data.credibility.author_analysis;
+    
+    // Build sources section if available
+    let sourcesHtml = '';
+    if (data.credibility.author_sources && data.credibility.author_sources.length > 0) {
+      sourcesHtml = `
+        <div class="author-sources">
+          <h4>📚 Sources</h4>
+          <div class="sources-list">
+            ${data.credibility.author_sources.map(source => `
+              <div class="source-item">
+                <span class="source-number">[${source.index}]</span>
+                <a href="${source.url}" target="_blank" rel="noopener noreferrer">
+                  ${source.title}
+                </a>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+    
+    authorSection = `
+      <div class="author-analysis">
+        <h3>Author & Background</h3>
+        ${hasAuthor ? `<p class="author-name">📝 ${data.source_meta.author}</p>` : ''}
+        <div class="author-info">
+          <div class="author-field">
+            <strong>👤 Expertise</strong>
+            <p>${author.expertise}</p>
+          </div>
+          <div class="author-field">
+            <strong>📋 Background</strong>
+            <p>${author.background}</p>
+          </div>
+          <div class="author-field">
+            <strong>✓ Reputation Signals</strong>
+            <p>${author.reputation_signals}</p>
+          </div>
+          <div class="author-field">
+            <strong>⚠️ Potential Bias</strong>
+            <p>${author.potential_bias}</p>
+          </div>
+        </div>
+        ${sourcesHtml}
+      </div>
+    `;
+  }
+  
   document.getElementById('tab-credibility').innerHTML = `
     <div class="credibility-content">
       <div class="credibility-score" style="color: ${scoreColor}">
@@ -230,9 +299,10 @@ function displayResults(data) {
         <div class="score-badge">${data.credibility.label}</div>
       </div>
       <div class="credibility-explanation">
-        <h3>Analysis</h3>
+        <h3>Overall Assessment</h3>
         <p>${data.credibility.why}</p>
       </div>
+      ${authorSection}
     </div>
   `;
   
@@ -243,6 +313,71 @@ function displayResults(data) {
       <p>Ask me anything about this ${data.type === 'video' ? 'video' : 'article'}!</p>
     </div>
   `;
+  
+  // Load connections
+  loadConnections(window.location.href);
+}
+
+async function loadConnections(url) {
+  try {
+    const urlHash = btoa(url);
+    const response = await chrome.runtime.sendMessage({
+      action: 'getConnections',
+      data: { urlHash }
+    });
+    
+    if (response.error) {
+      throw new Error(response.error);
+    }
+    
+    displayConnections(response.connections);
+  } catch (error) {
+    console.error('Failed to load connections:', error);
+    document.getElementById('tab-connections').innerHTML = `
+      <div class="connections-empty">
+        <p>🔗 No connections found yet</p>
+        <p class="connections-detail">As you read more articles, SmartSummary will discover connections between them based on topics, authors, and themes.</p>
+      </div>
+    `;
+  }
+}
+
+function displayConnections(connections) {
+  if (!connections || connections.length === 0) {
+    document.getElementById('tab-connections').innerHTML = `
+      <div class="connections-empty">
+        <p>🔗 No connections found yet</p>
+        <p class="connections-detail">As you read more articles, SmartSummary will discover connections between them based on topics, authors, and themes.</p>
+      </div>
+    `;
+    return;
+  }
+  
+  const connectionsHtml = `
+    <div class="connections-content">
+      <h3>Related Articles You've Read</h3>
+      <p class="connections-subtitle">Articles connected by topic, author, or theme</p>
+      <div class="connections-list">
+        ${connections.map((conn, idx) => `
+          <div class="connection-item">
+            <div class="connection-header">
+              <span class="connection-number">${idx + 1}</span>
+              <div class="connection-info">
+                <h4><a href="${conn.url}" target="_blank">${conn.title || 'Article'}</a></h4>
+                <p class="connection-meta">${conn.source} • ${new Date(conn.analyzed_at).toLocaleDateString()}</p>
+              </div>
+            </div>
+            <p class="connection-reason">🔗 ${conn.connectionReason}</p>
+            <div class="connection-topics">
+              ${(conn.topics || []).map(topic => `<span class="topic-tag">${topic}</span>`).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  
+  document.getElementById('tab-connections').innerHTML = connectionsHtml;
 }
 
 async function sendChatMessage() {

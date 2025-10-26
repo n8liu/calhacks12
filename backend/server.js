@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { v4 as uuidv4 } from 'uuid';
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import axios from 'axios';
 
 dotenv.config();
 
@@ -21,9 +22,19 @@ const anthropic = new Anthropic({
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 
+// Letta AI Configuration
+const LETTA_API_KEY = process.env.LETTA_API_KEY;
+const LETTA_BASE_URL = process.env.LETTA_BASE_URL || 'https://api.letta.com';
+let lettaAgentId = null;
+
 // In-memory storage (replace with database in production)
 const conversations = new Map();
 const cache = new Map();
+
+// Article memory system (enhanced with Letta)
+const articleMemory = new Map(); // url -> article data
+const articleConnections = new Map(); // articleId -> [related article IDs]
+const topicIndex = new Map(); // topic -> [article IDs]
 
 // Helper: Generate cache key from URL
 function getCacheKey(url) {
@@ -35,6 +46,149 @@ function cleanContent(content, maxTokens = 8000) {
   // Simple token approximation: ~4 chars per token
   const maxChars = maxTokens * 4;
   return content.substring(0, maxChars).trim();
+}
+
+// Letta AI Helper: Initialize or get agent
+async function initializeLettaAgent() {
+  if (!LETTA_API_KEY || LETTA_API_KEY === 'your_letta_api_key_here') {
+    return null;
+  }
+
+  try {
+    // Check if we already have an agent
+    if (lettaAgentId) {
+      return lettaAgentId;
+    }
+
+    // Create or retrieve SmartSummary agent
+    const response = await axios.post(
+      `${LETTA_BASE_URL}/v1/agents`,
+      {
+        name: 'SmartSummary-Memory-Agent',
+        persona: 'You are a memory system for SmartSummary. You remember articles users have read and help them discover connections between content.',
+        human: 'A user reading articles and seeking to understand connections between information.',
+        system: 'Store and retrieve article memories. Find connections between articles based on topics, authors, and themes.'
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${LETTA_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    lettaAgentId = response.data.id;
+    console.log('✅ Letta agent initialized:', lettaAgentId);
+    return lettaAgentId;
+
+  } catch (error) {
+    if (error.response?.status === 409) {
+      // Agent already exists, retrieve it
+      try {
+        const listResponse = await axios.get(`${LETTA_BASE_URL}/v1/agents`, {
+          headers: { 'Authorization': `Bearer ${LETTA_API_KEY}` }
+        });
+        
+        const agent = listResponse.data.find(a => a.name === 'SmartSummary-Memory-Agent');
+        if (agent) {
+          lettaAgentId = agent.id;
+          console.log('✅ Letta agent retrieved:', lettaAgentId);
+          return lettaAgentId;
+        }
+      } catch (listError) {
+        console.error('Error retrieving Letta agent:', listError.message);
+      }
+    }
+    
+    console.error('Letta agent initialization error:', error.message);
+    return null;
+  }
+}
+
+// Letta AI Helper: Store article in Letta memory
+async function storeLettaMemory(articleData) {
+  const agentId = await initializeLettaAgent();
+  if (!agentId) return null;
+
+  try {
+    const memoryMessage = `Remember this article:
+Title: "${articleData.title}"
+URL: ${articleData.url}
+Author: ${articleData.author}
+Source: ${articleData.source}
+Topics: ${articleData.topics.join(', ')}
+Summary: ${articleData.summary}
+Credibility: ${articleData.credibility_label} (${Math.round(articleData.credibility_score * 100)}%)
+Date Read: ${articleData.analyzed_at}
+
+Key Points:
+${articleData.bullets.map((b, i) => `${i + 1}. ${b}`).join('\n')}`;
+
+    const response = await axios.post(
+      `${LETTA_BASE_URL}/v1/agents/${agentId}/messages`,
+      {
+        messages: [{
+          role: 'user',
+          content: memoryMessage
+        }],
+        stream: false
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${LETTA_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    console.log('✅ Article stored in Letta memory');
+    return response.data;
+
+  } catch (error) {
+    console.error('Letta memory storage error:', error.message);
+    return null;
+  }
+}
+
+// Letta AI Helper: Query connections from Letta
+async function queryLettaConnections(currentArticle) {
+  const agentId = await initializeLettaAgent();
+  if (!agentId) return null;
+
+  try {
+    const query = `What articles have I read that are related to this one?
+Title: "${currentArticle.title}"
+Topics: ${currentArticle.topics.join(', ')}
+Author: ${currentArticle.author}
+
+List up to 5 related articles with explanation of the connection. Format as JSON array.`;
+
+    const response = await axios.post(
+      `${LETTA_BASE_URL}/v1/agents/${agentId}/messages`,
+      {
+        messages: [{
+          role: 'user',
+          content: query
+        }],
+        stream: false
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${LETTA_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    // Parse Letta's response for connections
+    const responseText = response.data.messages?.[0]?.content || '';
+    console.log('✅ Retrieved connections from Letta');
+    return responseText;
+
+  } catch (error) {
+    console.error('Letta query error:', error.message);
+    return null;
+  }
 }
 
 // POST /analyze - Analyze content with Gemini + Claude
@@ -95,7 +249,13 @@ app.post('/analyze', async (req, res) => {
       credibility = {
         score: 0.5,
         label: 'Unknown',
-        why: 'Credibility analysis temporarily unavailable. This does not reflect on the source quality.'
+        why: 'Credibility analysis temporarily unavailable. This does not reflect on the source quality.',
+        author_analysis: {
+          expertise: 'Unable to analyze at this time',
+          background: 'Unable to analyze at this time',
+          reputation_signals: 'Unable to analyze at this time',
+          potential_bias: 'Unable to analyze at this time'
+        }
       };
     }
 
@@ -127,6 +287,13 @@ app.post('/analyze', async (req, res) => {
 
     // Cache result
     cache.set(cacheKey, result);
+
+    // Store in article memory (async, don't wait)
+    storeArticleInMemory(url, result, metadata).then(memoryResult => {
+      if (memoryResult) {
+        result.memory = memoryResult;
+      }
+    }).catch(err => console.error('Memory storage error:', err));
 
     res.json(result);
   } catch (error) {
@@ -227,19 +394,94 @@ Return ONLY the JSON, no other text.`;
   }
 }
 
+// Helper: Search the web for author information using Gemini 2.5 Flash with Google Search
+async function searchAuthorInfo(authorName, source) {
+  if (!authorName || authorName === 'Unknown') {
+    return null;
+  }
+
+  try {
+    const model = genAI.getGenerativeModel({ 
+      model: 'gemini-2.5-flash',
+      tools: [{
+        googleSearch: {}
+      }]
+    });
+
+    const searchQuery = `Who is ${authorName}${source ? ` from ${source}` : ''}? What is their background, credentials, expertise, and reputation as a journalist/writer/author? Include their professional history, notable works, and any potential biases or conflicts of interest.`;
+    
+    console.log(`🔍 Searching with Gemini: ${searchQuery}`);
+    
+    const result = await model.generateContent(searchQuery);
+    const response = await result.response;
+    const text = response.text();
+    
+    // Extract grounding metadata (sources)
+    const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
+    let sources = [];
+    
+    if (groundingMetadata?.groundingChunks) {
+      sources = groundingMetadata.groundingChunks
+        .filter(chunk => chunk.web)
+        .map(chunk => ({
+          title: chunk.web.title || 'Web Source',
+          url: chunk.web.uri,
+          content: text.substring(0, 500) // Use part of the response as context
+        }));
+    }
+    
+    // Return structured result
+    return {
+      summary: text,
+      sources: sources.slice(0, 5) // Limit to 5 sources
+    };
+    
+  } catch (error) {
+    console.error('Gemini search error:', error.message);
+    return null;
+  }
+}
+
 // Helper: Get credibility from Claude
 async function getCredibilityFromClaude(content, metadata, url) {
   try {
+    // First, search for author information online using Gemini
+    let authorInfoText = '';
+    let authorSources = [];
+    
+    if (metadata?.author && metadata.author !== 'Unknown') {
+      console.log(`🔍 Searching web for author: ${metadata.author}`);
+      const searchResults = await searchAuthorInfo(metadata.author, metadata?.source);
+      
+      if (searchResults && searchResults.summary) {
+        console.log(`✅ Found information about author with ${searchResults.sources.length} sources`);
+        authorSources = searchResults.sources;
+        authorInfoText = '\n\nWEB RESEARCH ABOUT THE AUTHOR:\n';
+        authorInfoText += searchResults.summary + '\n\n';
+        
+        if (searchResults.sources.length > 0) {
+          authorInfoText += 'SOURCES:\n';
+          searchResults.sources.forEach((source, idx) => {
+            authorInfoText += `[${idx + 1}] ${source.title}\nURL: ${source.url}\n\n`;
+          });
+        }
+      } else {
+        console.log('⚠️  No web results found for author');
+      }
+    }
+
     const prompt = `You are a careful media literacy assistant. You assess credibility and bias, not political alignment. Be specific and calm.
 
 We have an article/video with this metadata:
 
 Source: ${metadata?.source || new URL(url).hostname}
 Author: ${metadata?.author || 'Unknown'}
+Channel: ${metadata?.channel || 'Unknown'}
 Published: ${metadata?.published_at || 'Unknown'}
 
 Content:
 ${content.substring(0, 6000)}
+${authorInfoText}
 
 TASK:
 1. Rate credibility 0.0 (not trustworthy) → 1.0 (highly trustworthy).
@@ -250,19 +492,40 @@ TASK:
    - Presence/absence of data, citations, or verifiable specifics
    - Whether it's reporting vs opinion
 4. Mention any obvious bias.
+5. Analyze the AUTHOR/CREATOR:
+   ${authorSources.length > 0 ? 
+     `- Use the WEB RESEARCH provided above to inform your analysis
+   - Cite sources using [1], [2], [3] etc. to reference the sources listed
+   - What expertise or credentials do they have?
+   - What's their background and professional history?
+   - Are they an established journalist, blogger, content creator, or academic?
+   - Any conflicts of interest or biases evident?` :
+     `- Analyze based on the article content and writing style
+   - Note that no web research was available
+   - Assess what type of author this appears to be based on the content
+   - Look for any biases evident in the writing`}
+
+IMPORTANT: When citing information about the author, use [1], [2], [3] etc. to reference the sources in the WEB RESEARCH section above.
 
 Return JSON:
 {
   "score": 0.82,
   "label": "Reliable",
-  "why": "..."
+  "why": "...",
+  "author_analysis": {
+    "expertise": "Assessment with citations like [1] or [2]",
+    "background": "What type of author/creator with citations",
+    "reputation_signals": "Signs of credibility with citations",
+    "potential_bias": "Conflicts of interest with citations",
+    "sources_used": ["Brief description of source [1]", "Brief description of source [2]"]
+  }
 }
 
 Return ONLY the JSON, no other text.`;
 
     const message = await anthropic.messages.create({
       model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 1024,
+      max_tokens: 1536,
       messages: [{
         role: 'user',
         content: prompt
@@ -274,7 +537,18 @@ Return ONLY the JSON, no other text.`;
     // Parse JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+      const result = JSON.parse(jsonMatch[0]);
+      
+      // Add actual source URLs to the response
+      if (authorSources.length > 0) {
+        result.author_sources = authorSources.map((source, idx) => ({
+          index: idx + 1,
+          title: source.title,
+          url: source.url
+        }));
+      }
+      
+      return result;
     }
     
     throw new Error('Failed to parse Claude response');
@@ -284,7 +558,13 @@ Return ONLY the JSON, no other text.`;
     return {
       score: 0.5,
       label: 'Unknown',
-      why: 'Unable to assess credibility at this time.'
+      why: 'Unable to assess credibility at this time.',
+      author_analysis: {
+        expertise: 'Unable to analyze',
+        background: 'Unable to analyze',
+        reputation_signals: 'Unable to analyze',
+        potential_bias: 'Unable to analyze'
+      }
     };
   }
 }
@@ -332,6 +612,163 @@ Return ONLY the JSON, no other text.`;
   throw new Error('Failed to parse Claude summary response');
 }
 
+// Helper: Extract topics and themes from article using Gemini
+async function extractTopics(summary, bullets, content) {
+  try {
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    
+    const prompt = `Analyze this article and extract 3-5 main topics/themes as single words or short phrases.
+
+Summary: ${summary}
+
+Key Points:
+${bullets.join('\n')}
+
+Return ONLY a JSON array of topics, like: ["politics", "climate change", "technology"]`;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    const jsonMatch = text.match(/\[[\s\S]*?\]/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    
+    return [];
+  } catch (error) {
+    console.error('Topic extraction error:', error.message);
+    return [];
+  }
+}
+
+// Helper: Find connections between articles
+async function findConnections(newArticle, allArticles) {
+  if (allArticles.length === 0) return [];
+  
+  try {
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    
+    // Compare with recent articles (last 20)
+    const recentArticles = allArticles.slice(-20);
+    
+    const connections = [];
+    
+    for (const existingArticle of recentArticles) {
+      // Skip same article
+      if (existingArticle.url === newArticle.url) continue;
+      
+      // Quick topic overlap check
+      const sharedTopics = newArticle.topics.filter(t => 
+        existingArticle.topics.includes(t)
+      );
+      
+      // Same author
+      const sameAuthor = newArticle.author && 
+                        existingArticle.author && 
+                        newArticle.author === existingArticle.author;
+      
+      if (sharedTopics.length > 0 || sameAuthor) {
+        // Ask AI for connection reasoning
+        const prompt = `Compare these two articles and explain their connection in 1 sentence.
+
+Article 1: "${newArticle.title}"
+Summary: ${newArticle.summary}
+Topics: ${newArticle.topics.join(', ')}
+
+Article 2: "${existingArticle.title}"
+Summary: ${existingArticle.summary}
+Topics: ${existingArticle.topics.join(', ')}
+
+Return ONLY the connection reason as plain text.`;
+
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const reason = response.text().trim();
+        
+        connections.push({
+          url: existingArticle.url,
+          reason,
+          strength: sharedTopics.length + (sameAuthor ? 2 : 0)
+        });
+      }
+    }
+    
+    // Sort by connection strength
+    return connections.sort((a, b) => b.strength - a.strength).slice(0, 5);
+    
+  } catch (error) {
+    console.error('Connection finding error:', error.message);
+    return [];
+  }
+}
+
+// Helper: Store article in memory
+async function storeArticleInMemory(url, analysisResult, metadata) {
+  try {
+    const urlHash = getCacheKey(url);
+    
+    // Extract topics
+    const topics = await extractTopics(
+      analysisResult.summary,
+      analysisResult.bullets,
+      ''
+    );
+    
+    // Create article memory entry
+    const articleData = {
+      url,
+      urlHash,
+      title: metadata?.title || 'Untitled',
+      author: metadata?.author || 'Unknown',
+      source: metadata?.source || new URL(url).hostname,
+      published_at: metadata?.published_at,
+      analyzed_at: new Date().toISOString(),
+      summary: analysisResult.summary,
+      bullets: analysisResult.bullets,
+      topics,
+      credibility_score: analysisResult.credibility.score,
+      credibility_label: analysisResult.credibility.label
+    };
+    
+    // Store article
+    articleMemory.set(url, articleData);
+    
+    // Update topic index
+    topics.forEach(topic => {
+      if (!topicIndex.has(topic)) {
+        topicIndex.set(topic, []);
+      }
+      topicIndex.get(topic).push(url);
+    });
+    
+    // Find connections
+    const allArticles = Array.from(articleMemory.values());
+    const connections = await findConnections(articleData, allArticles);
+    articleConnections.set(urlHash, connections);
+    
+    console.log(`📚 Stored article in memory: ${articleData.title}`);
+    console.log(`   Topics: ${topics.join(', ')}`);
+    console.log(`   Connections found: ${connections.length}`);
+    
+    // Also store in Letta for persistent memory (async, don't wait)
+    storeLettaMemory(articleData).catch(err => 
+      console.error('Letta storage error:', err.message)
+    );
+    
+    return {
+      topics,
+      connections: connections.length,
+      totalArticles: articleMemory.size,
+      lettaEnabled: LETTA_API_KEY && LETTA_API_KEY !== 'your_letta_api_key_here'
+    };
+    
+  } catch (error) {
+    console.error('Error storing article:', error);
+    return null;
+  }
+}
+
 // Helper: Chat with Claude
 async function chatWithClaude(sourceContent, metadata, conversationHistory, userMessage) {
   try {
@@ -375,24 +812,78 @@ ${sourceContent.substring(0, 6000)}`;
   }
 }
 
+// GET /history - Get analyzed article history
+app.get('/history', (req, res) => {
+  try {
+    const articles = Array.from(articleMemory.values())
+      .sort((a, b) => new Date(b.analyzed_at) - new Date(a.analyzed_at))
+      .slice(0, 50); // Last 50 articles
+    
+    res.json({ articles, total: articleMemory.size });
+  } catch (error) {
+    console.error('Error in /history:', error);
+    res.status(500).json({ error: 'Failed to get history' });
+  }
+});
+
+// GET /connections/:url - Get article connections
+app.get('/connections/:urlHash', (req, res) => {
+  try {
+    const { urlHash } = req.params;
+    const connections = articleConnections.get(urlHash) || [];
+    
+    // Get full article data for connections
+    const connectedArticles = connections.map(conn => ({
+      ...articleMemory.get(conn.url),
+      connectionReason: conn.reason,
+      connectionStrength: conn.strength
+    })).filter(Boolean);
+    
+    res.json({ connections: connectedArticles });
+  } catch (error) {
+    console.error('Error in /connections:', error);
+    res.status(500).json({ error: 'Failed to get connections' });
+  }
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 SmartSummary backend running on http://localhost:${PORT}`);
   console.log(`📝 Endpoints:`);
   console.log(`   POST /analyze - Analyze content`);
   console.log(`   POST /chat - Chat about content`);
+  console.log(`   GET /history - Get reading history`);
+  console.log(`   GET /connections/:urlHash - Get article connections`);
   console.log(`   GET /health - Health check`);
+  console.log('');
   
   if (!process.env.ANTHROPIC_API_KEY) {
     console.warn('⚠️  WARNING: ANTHROPIC_API_KEY not set in .env');
   }
   if (!process.env.GOOGLE_API_KEY) {
     console.warn('⚠️  WARNING: GOOGLE_API_KEY not set in .env');
+  } else {
+    console.log('✅ Gemini enabled for summaries and author research (with Google Search)');
+  }
+  
+  // Initialize Letta
+  if (LETTA_API_KEY && LETTA_API_KEY !== 'your_letta_api_key_here') {
+    console.log('🧠 Initializing Letta AI agent...');
+    const agentId = await initializeLettaAgent();
+    if (agentId) {
+      console.log('✅ Letta AI enabled - Persistent memory active!');
+      console.log(`   Agent ID: ${agentId}`);
+    } else {
+      console.warn('⚠️  Letta initialization failed - Using local memory only');
+    }
+  } else {
+    console.log('💡 Letta AI not configured - Using local memory only');
+    console.log('   Add LETTA_API_KEY to .env for persistent memory across restarts');
   }
 });
 

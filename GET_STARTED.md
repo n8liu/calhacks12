@@ -2,19 +2,27 @@
 
 ## Step 1: Get API Keys (5 minutes)
 
-You need two API keys:
+You need two API keys (+ optional third for persistent memory):
 
-### Claude API Key
+### Claude API Key (Required)
 1. Go to [console.anthropic.com](https://console.anthropic.com/)
 2. Sign up or log in
 3. Create an API key
 4. Copy it (starts with `sk-ant-`)
 
-### Gemini API Key
+### Gemini API Key (Recommended - enables summaries + author research)
 1. Go to [makersuite.google.com/app/apikey](https://makersuite.google.com/app/apikey)
 2. Sign in with Google
 3. Click "Create API Key"
 4. Copy it (starts with `AIzaSy`)
+5. **Bonus:** This enables Google Search grounding for author background research!
+
+### Letta AI API Key (Optional - enables persistent memory)
+1. Go to [app.letta.com](https://app.letta.com/)
+2. Sign up or log in
+3. Create an API key
+4. Copy it (starts with `letta_`)
+5. **Bonus:** Memory persists across server restarts!
 
 ## Step 2: Configure Backend (2 minutes)
 
@@ -22,10 +30,23 @@ You need two API keys:
 2. Replace the placeholder values:
 
 ```env
+# Required
 ANTHROPIC_API_KEY=sk-ant-your-actual-key-here
+
+# Recommended (enables summaries + web research)
 GOOGLE_API_KEY=AIzaSy-your-actual-key-here
+
+# Optional (enables persistent memory)
+LETTA_API_KEY=letta_your-actual-key-here
+LETTA_BASE_URL=https://api.letta.com
+
 PORT=3000
 ```
+
+**Notes:**
+- **Gemini** enables fast summaries AND web-powered author research via Google Search! 🔍
+- **Letta** enables persistent memory across server restarts! 🧠
+- Works without Letta (just no persistence)
 
 3. Save the file
 

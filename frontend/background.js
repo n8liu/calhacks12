@@ -18,6 +18,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(error => sendResponse({ error: error.message }));
     return true;
   }
+  
+  if (request.action === 'getConnections') {
+    getConnections(request.data)
+      .then(sendResponse)
+      .catch(error => sendResponse({ error: error.message }));
+    return true;
+  }
 });
 
 // Call backend /analyze endpoint
@@ -60,6 +67,27 @@ async function sendChatMessage(data) {
     return await response.json();
   } catch (error) {
     console.error('Error sending chat message:', error);
+    throw error;
+  }
+}
+
+// Get article connections
+async function getConnections(data) {
+  try {
+    const response = await fetch(`${BACKEND_URL}/connections/${data.urlHash}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error getting connections:', error);
     throw error;
   }
 }
