@@ -193,7 +193,7 @@ extension/
 ```json
 {
   "manifest_version": 3,
-  "name": "SmartSummary",
+  "name": "DeepDive",
   "version": "0.1.0",
   "description": "Summarize and fact-check whatever you're reading or watching.",
   "permissions": ["activeTab", "scripting", "storage"],

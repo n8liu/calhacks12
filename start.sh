@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# SmartSummary startup script
+# DeepDive startup script
 
-echo "🚀 Starting SmartSummary..."
+echo "🚀 Starting DeepDive..."
 echo ""
 
 # Check if Node.js is installed

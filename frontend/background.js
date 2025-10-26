@@ -1,4 +1,4 @@
-// Background service worker for SmartSummary extension
+// Background service worker for DeepDive extension
 // Handles communication between content scripts and backend API
 
 const BACKEND_URL = 'http://localhost:3000';
@@ -92,5 +92,5 @@ async function getConnections(data) {
   }
 }
 
-console.log('SmartSummary background service worker loaded');
+console.log('DeepDive background service worker loaded');
 

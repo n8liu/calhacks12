@@ -2,7 +2,7 @@
 
 ## Overview
 
-SmartSummary now includes a comprehensive fact-checking system powered by **Gemini 2.5 Flash with Google Search Grounding**. This feature verifies key factual claims from articles against external reliable sources and displays the verification results directly in the credibility section.
+DeepDive now includes a comprehensive fact-checking system powered by **Gemini 2.5 Flash with Google Search Grounding**. This feature verifies key factual claims from articles against external reliable sources and displays the verification results directly in the credibility section.
 
 ## How It Works
 

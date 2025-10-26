@@ -1,6 +1,6 @@
 # Letta-Inspired Memory System
 
-SmartSummary now includes a **Letta AI-inspired memory system** that remembers articles you've read and discovers intelligent connections between them.
+DeepDive now includes a **Letta AI-inspired memory system** that remembers articles you've read and discovers intelligent connections between them.
 
 ## 🧠 What is Letta AI?
 

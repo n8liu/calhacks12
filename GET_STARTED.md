@@ -67,7 +67,7 @@ npm start
 
 You should see:
 ```
-🚀 SmartSummary backend running on http://localhost:3000
+🚀 DeepDive backend running on http://localhost:3000
 ```
 
 ## Step 4: Load Chrome Extension

@@ -60,12 +60,12 @@ async function initializeLettaAgent() {
       return lettaAgentId;
     }
 
-    // Create or retrieve SmartSummary agent
+    // Create or retrieve DeepDive agent
     const response = await axios.post(
       `${LETTA_BASE_URL}/v1/agents`,
       {
-        name: 'SmartSummary-Memory-Agent',
-        persona: 'You are a memory system for SmartSummary. You remember articles users have read and help them discover connections between content.',
+        name: 'DeepDive-Memory-Agent',
+        persona: 'You are a memory system for DeepDive. You remember articles users have read and help them discover connections between content.',
         human: 'A user reading articles and seeking to understand connections between information.',
         system: 'Store and retrieve article memories. Find connections between articles based on topics, authors, and themes.'
       },
@@ -89,7 +89,7 @@ async function initializeLettaAgent() {
           headers: { 'Authorization': `Bearer ${LETTA_API_KEY}` }
         });
         
-        const agent = listResponse.data.find(a => a.name === 'SmartSummary-Memory-Agent');
+        const agent = listResponse.data.find(a => a.name === 'DeepDive-Memory-Agent');
         if (agent) {
           lettaAgentId = agent.id;
           console.log('✅ Letta agent retrieved:', lettaAgentId);
@@ -1038,7 +1038,7 @@ app.get('/health', (req, res) => {
 
 // Start server
 app.listen(PORT, async () => {
-  console.log(`🚀 SmartSummary backend running on http://localhost:${PORT}`);
+  console.log(`🚀 DeepDive backend running on http://localhost:${PORT}`);
   console.log(`📝 Endpoints:`);
   console.log(`   POST /analyze - Analyze content`);
   console.log(`   POST /chat - Chat about content`);

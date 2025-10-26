@@ -2,7 +2,7 @@
 
 ## How It Works
 
-SmartSummary now uses **Gemini 2.0 Flash with Google Search grounding** to research author backgrounds and credibility - no additional API keys needed!
+DeepDive now uses **Gemini 2.0 Flash with Google Search grounding** to research author backgrounds and credibility - no additional API keys needed!
 
 ## What This Means
 

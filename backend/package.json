@@ -1,7 +1,7 @@
 {
-  "name": "smartsummary-backend",
+  "name": "deepdive-backend",
   "version": "0.1.0",
-  "description": "Backend API for SmartSummary Chrome extension",
+  "description": "Backend API for DeepDive Chrome extension",
   "main": "server.js",
   "type": "module",
   "scripts": {

@@ -1,7 +1,7 @@
 // Content script that runs on every page
 // Responsible for scraping content and injecting the UI
 
-console.log('SmartSummary content script loaded');
+console.log('DeepDive content script loaded');
 
 let isUIInjected = false;
 let currentData = null;
@@ -19,7 +19,7 @@ function injectUI() {
   const floatingButton = document.createElement('button');
   floatingButton.id = 'smart-summary-toggle';
   floatingButton.innerHTML = 'S';
-  floatingButton.title = 'Open SmartSummary';
+  floatingButton.title = 'Open DeepDive';
   container.appendChild(floatingButton);
   
   // Create sidebar panel
@@ -28,7 +28,7 @@ function injectUI() {
   sidebar.className = 'smart-summary-hidden';
   sidebar.innerHTML = `
     <div class="smart-summary-header">
-      <h2>SmartSummary</h2>
+      <h2>DeepDive</h2>
       <button id="smart-summary-close">×</button>
     </div>
     <div class="smart-summary-tabs">
@@ -725,7 +725,7 @@ async function loadConnections(url) {
     document.getElementById('tab-connections').innerHTML = `
       <div class="connections-empty">
         <p>No connections found yet</p>
-        <p class="connections-detail">As you read more articles, SmartSummary will discover connections between them based on topics, authors, and themes.</p>
+        <p class="connections-detail">As you read more articles, DeepDive will discover connections between them based on topics, authors, and themes.</p>
       </div>
     `;
   }
@@ -736,7 +736,7 @@ function displayConnections(connections) {
     document.getElementById('tab-connections').innerHTML = `
       <div class="connections-empty">
         <p>No connections found yet</p>
-        <p class="connections-detail">As you read more articles, SmartSummary will discover connections between them based on topics, authors, and themes.</p>
+        <p class="connections-detail">As you read more articles, DeepDive will discover connections between them based on topics, authors, and themes.</p>
       </div>
     `;
     return;

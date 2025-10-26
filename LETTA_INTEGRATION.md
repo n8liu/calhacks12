@@ -1,6 +1,6 @@
 # Letta AI Integration Guide
 
-Your SmartSummary extension now has **real Letta AI integration** for persistent, intelligent memory!
+Your DeepDive extension now has **real Letta AI integration** for persistent, intelligent memory!
 
 ## 🎉 What You Get with Letta
 
@@ -106,12 +106,12 @@ Key Points:
 
 ### Letta Agent
 
-SmartSummary creates a dedicated Letta agent:
+DeepDive creates a dedicated Letta agent:
 
 ```javascript
 {
-  name: 'SmartSummary-Memory-Agent',
-  persona: 'Memory system for SmartSummary',
+  name: 'DeepDive-Memory-Agent',
+  persona: 'Memory system for DeepDive',
   role: 'Store and retrieve article memories, 
          find connections'
 }
@@ -243,7 +243,7 @@ Edit in `server.js`:
 
 ```javascript
 const response = await axios.post(`${LETTA_BASE_URL}/v1/agents`, {
-  name: 'SmartSummary-Memory-Agent',
+  name: 'DeepDive-Memory-Agent',
   persona: 'Your custom persona here...',
   // ...
 });
@@ -307,7 +307,7 @@ Not an error! The system automatically retrieves your existing agent.
 ### View in Letta Dashboard
 
 1. Go to [app.letta.com](https://app.letta.com)
-2. Find "SmartSummary-Memory-Agent"
+2. Find "DeepDive-Memory-Agent"
 3. View conversation history
 4. See all stored memories
 
@@ -336,7 +336,7 @@ With Letta integrated, you can now add:
 
 ## ✨ You're All Set!
 
-Your SmartSummary extension now has **production-grade, persistent memory** powered by Letta AI!
+Your DeepDive extension now has **production-grade, persistent memory** powered by Letta AI!
 
 **Next steps:**
 1. Add your `LETTA_API_KEY` to `.env`

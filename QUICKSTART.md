@@ -1,4 +1,4 @@
-# SmartSummary - Quick Start Guide
+# DeepDive - Quick Start Guide
 
 Get your AI co-pilot up and running in 5 minutes! 🚀
 
@@ -44,7 +44,7 @@ npm start
 
 You should see:
 ```
-🚀 SmartSummary backend running on http://localhost:3000
+🚀 DeepDive backend running on http://localhost:3000
 ```
 
 Keep this terminal window open!
@@ -63,7 +63,7 @@ Keep this terminal window open!
 
 1. Click **"Load unpacked"**
 2. Select the `frontend` folder from this project
-3. You should see the SmartSummary extension appear!
+3. You should see the DeepDive extension appear!
 
 ### 2.3 (Optional) Fix icon warnings
 
@@ -119,11 +119,11 @@ curl http://localhost:3000/health
 **Check browser console:**
 1. Right-click on page → Inspect
 2. Go to Console tab
-3. Look for errors related to SmartSummary
+3. Look for errors related to DeepDive
 
 **Check extension console:**
 1. Go to `chrome://extensions/`
-2. Find SmartSummary
+2. Find DeepDive
 3. Click "Inspect views: service worker"
 4. Check for errors
 
@@ -157,7 +157,7 @@ This uses nodemon to auto-restart when you change files.
 **Frontend changes:**
 - Edit files in `frontend/`
 - Go to `chrome://extensions/`
-- Click the refresh icon on SmartSummary extension
+- Click the refresh icon on DeepDive extension
 - Reload the webpage you're testing on
 
 **Backend changes:**

@@ -1,6 +1,6 @@
 # Setup Checklist ✅
 
-Follow this checklist to get SmartSummary running:
+Follow this checklist to get DeepDive running:
 
 ## Prerequisites
 
@@ -80,7 +80,7 @@ If you hit any issues, check:
 
 - [ ] Backend console shows no errors
 - [ ] Browser console shows no errors (F12 → Console)
-- [ ] Extension service worker shows no errors (chrome://extensions/ → SmartSummary → "Inspect views")
+- [ ] Extension service worker shows no errors (chrome://extensions/ → DeepDive → "Inspect views")
 - [ ] API keys are valid and have no extra spaces
 - [ ] Port 3000 is not in use by another app
 
