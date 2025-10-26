@@ -5,6 +5,17 @@ console.log('DeepDive content script loaded');
 
 let isUIInjected = false;
 let currentData = null;
+let streamingText = '';
+let credibilityStreamingText = '';
+let streamingData = {};
+
+// Listen for streaming updates from background
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'streamUpdate') {
+    handleStreamUpdate(message.data);
+  }
+  return true;
+});
 
 // Inject the floating button and sidebar
 function injectUI() {
@@ -28,7 +39,14 @@ function injectUI() {
   sidebar.className = 'smart-summary-hidden';
   sidebar.innerHTML = `
     <div class="smart-summary-header">
-      <h2>DeepDive</h2>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button id="fullscreen-toggle" title="Fullscreen">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+          </svg>
+        </button>
+        <h2>DeepDive</h2>
+      </div>
       <div style="display: flex; align-items: center; gap: 8px;">
         <button id="theme-toggle" title="Toggle theme">🌙</button>
         <button id="smart-summary-close">×</button>
@@ -89,7 +107,8 @@ function injectUI() {
   floatingButton.addEventListener('click', handleButtonClick);
   document.getElementById('smart-summary-close').addEventListener('click', toggleSidebar);
   document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
-  
+  document.getElementById('fullscreen-toggle').addEventListener('click', toggleFullscreen);
+
   // Initialize theme
   initTheme();
   
@@ -271,15 +290,38 @@ function initTheme() {
 function toggleTheme() {
   const root = document.getElementById('smart-summary-root');
   const themeToggle = document.getElementById('theme-toggle');
-  
+
   root.classList.toggle('dark-mode');
-  
+
   if (root.classList.contains('dark-mode')) {
     localStorage.setItem('deepdive-theme', 'dark');
     themeToggle.textContent = '☀️';
   } else {
     localStorage.setItem('deepdive-theme', 'light');
     themeToggle.textContent = '🌙';
+  }
+}
+
+function toggleFullscreen() {
+  const sidebar = document.getElementById('smart-summary-sidebar');
+  const fullscreenToggle = document.getElementById('fullscreen-toggle');
+
+  sidebar.classList.toggle('fullscreen');
+
+  if (sidebar.classList.contains('fullscreen')) {
+    fullscreenToggle.innerHTML = `
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>
+      </svg>
+    `;
+    fullscreenToggle.title = 'Exit fullscreen';
+  } else {
+    fullscreenToggle.innerHTML = `
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+      </svg>
+    `;
+    fullscreenToggle.title = 'Fullscreen';
   }
 }
 
@@ -359,10 +401,188 @@ function extractYouTubeContent() {
   };
 }
 
-// Send content to backend for analysis
+// Handle streaming updates
+function handleStreamUpdate(data) {
+  const summaryTab = document.getElementById('tab-summary');
+  const credibilityTab = document.getElementById('tab-credibility');
+
+  if (data.type === 'status') {
+    // Update loading message
+    const loadingElement = summaryTab.querySelector('.loading-text');
+    if (loadingElement) {
+      loadingElement.textContent = data.message;
+    }
+  } else if (data.type === 'summary_chunk') {
+    // Accumulate streaming text
+    streamingText += data.text;
+
+    // Clean and format the streaming text for better display
+    const cleanedText = cleanStreamingText(streamingText);
+
+    // Display streaming text in real-time
+    summaryTab.innerHTML = `
+      <div class="summary-content streaming">
+        <div class="streaming-header">
+          <h3>Generating Summary</h3>
+          <div class="streaming-indicator">
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="dot"></span>
+          </div>
+        </div>
+        <div class="streaming-text">${cleanedText}</div>
+      </div>
+    `;
+  } else if (data.type === 'summary_complete') {
+    // Store complete summary
+    streamingData.summary = data.summary;
+    streamingData.bullets = data.bullets;
+    streamingText = ''; // Reset
+  } else if (data.type === 'credibility_chunk') {
+    // Accumulate credibility streaming text
+    credibilityStreamingText += data.text;
+
+    // Clean and format the credibility streaming text
+    const cleanedText = cleanCredibilityStreamingText(credibilityStreamingText);
+
+    // Display streaming credibility in real-time
+    credibilityTab.innerHTML = `
+      <div class="credibility-content streaming">
+        <div class="streaming-header">
+          <h3>Analyzing Credibility</h3>
+          <div class="streaming-indicator">
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="dot"></span>
+          </div>
+        </div>
+        <div class="streaming-text">${cleanedText}</div>
+      </div>
+    `;
+  } else if (data.type === 'credibility_complete') {
+    streamingData.credibility = data.credibility;
+    credibilityStreamingText = ''; // Reset
+  } else if (data.type === 'fact_check_complete') {
+    streamingData.fact_check = data.fact_check;
+  } else if (data.type === 'complete') {
+    // All done - display full results
+    streamingData.conversation_id = data.conversation_id;
+    currentData = streamingData;
+    displayResults(streamingData);
+    streamingData = {}; // Reset for next analysis
+  } else if (data.type === 'error') {
+    summaryTab.innerHTML = `<div class="error">Failed to analyze: ${data.message}</div>`;
+  }
+}
+
+// Clean streaming text for better display
+function cleanStreamingText(text) {
+  // Remove markdown code blocks if present
+  let cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+
+  // Try to parse if it looks like JSON is being formed
+  if (cleaned.includes('{') && cleaned.includes('"summary"')) {
+    try {
+      // Try to extract and display the summary field as it's being built
+      const summaryMatch = cleaned.match(/"summary"\s*:\s*"([^"]*)/);
+      if (summaryMatch) {
+        let displayText = summaryMatch[1];
+
+        // Check for bullets being formed
+        const bulletsMatch = cleaned.match(/"bullets"\s*:\s*\[(.*)/s);
+        if (bulletsMatch) {
+          const bulletContent = bulletsMatch[1];
+          // Extract bullet strings (handle incomplete bullets)
+          const bullets = [...bulletContent.matchAll(/"([^"]*)"/g)];
+          if (bullets && bullets.length > 0) {
+            displayText += '\n\nKey Points:';
+            bullets.forEach((match) => {
+              const cleanBullet = match[1];
+              if (cleanBullet) {
+                displayText += `\n• ${cleanBullet}`;
+              }
+            });
+          }
+        }
+
+        return escapeHtml(displayText);
+      }
+    } catch (e) {
+      // If parsing fails, fall back to raw display
+    }
+  }
+
+  // If we can't parse it nicely, at least escape HTML and clean formatting
+  return escapeHtml(cleaned).replace(/\\n/g, '\n').replace(/\\"/g, '"');
+}
+
+// Clean credibility streaming text for better display
+function cleanCredibilityStreamingText(text) {
+  // Remove markdown code blocks if present
+  let cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+
+  // Try to parse if it looks like JSON is being formed
+  if (cleaned.includes('{')) {
+    try {
+      // Try to extract key fields as they're being built
+      let displayText = '';
+
+      // Extract score if available
+      const scoreMatch = cleaned.match(/"score"\s*:\s*([\d.]+)/);
+      const labelMatch = cleaned.match(/"label"\s*:\s*"([^"]*)"/);
+
+      if (scoreMatch && labelMatch) {
+        const score = parseFloat(scoreMatch[1]);
+        const scorePercent = Math.round(score * 100);
+        displayText += `Trust Score: ${scorePercent}/100 - ${labelMatch[1]}\n\n`;
+      }
+
+      // Extract overall assessment
+      const assessmentMatch = cleaned.match(/"overall_assessment"\s*:\s*"([^"]*)"/);
+      if (assessmentMatch) {
+        displayText += `${assessmentMatch[1]}\n\n`;
+      }
+
+      // Extract website analysis
+      const websiteTypeMatch = cleaned.match(/"type"\s*:\s*"([^"]*)"/);
+      if (websiteTypeMatch) {
+        displayText += `Source Type: ${websiteTypeMatch[1]}\n`;
+      }
+
+      // Extract key analysis points if available
+      const reputationMatch = cleaned.match(/"reputation"\s*:\s*"([^"]*)"/);
+      if (reputationMatch) {
+        displayText += `Reputation: ${reputationMatch[1]}\n`;
+      }
+
+      if (displayText) {
+        return escapeHtml(displayText);
+      }
+    } catch (e) {
+      // If parsing fails, fall back to raw display
+    }
+  }
+
+  // If we can't parse it nicely, at least escape HTML and clean formatting
+  return escapeHtml(cleaned).replace(/\\n/g, '\n').replace(/\\"/g, '"');
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Send content to backend for analysis with streaming
 async function analyzeCurrentPage() {
   const pageData = extractPageContent();
-  
+
+  // Reset streaming state
+  streamingText = '';
+  credibilityStreamingText = '';
+  streamingData = {};
+
   // Show loading state with animated progress bars
   const loadingHTML = `
     <div class="loading">
@@ -380,25 +600,25 @@ async function analyzeCurrentPage() {
       <p class="loading-text">Checking credibility...</p>
     </div>
   `;
-  
+
   document.getElementById('tab-summary').innerHTML = loadingHTML;
   document.getElementById('tab-credibility').innerHTML = credibilityLoadingHTML;
-  
+
   try {
+    // Use streaming endpoint
     const response = await chrome.runtime.sendMessage({
-      action: 'analyze',
+      action: 'analyzeStream',
       data: pageData
     });
-    
+
     if (response.error) {
       throw new Error(response.error);
     }
-    
-    currentData = response;
-    displayResults(response);
+
+    // Response will be handled via streaming events
   } catch (error) {
     console.error('Analysis failed:', error);
-    document.getElementById('tab-summary').innerHTML = 
+    document.getElementById('tab-summary').innerHTML =
       `<div class="error">Failed to analyze: ${error.message}</div>`;
   }
 }
@@ -777,23 +997,55 @@ function displayResults(data) {
 async function loadConnections(url) {
   try {
     const urlHash = btoa(url);
-    const response = await chrome.runtime.sendMessage({
-      action: 'getConnections',
-      data: { urlHash }
-    });
+    const [connectionsResponse, historyResponse] = await Promise.all([
+      chrome.runtime.sendMessage({
+        action: 'getConnections',
+        data: { urlHash }
+      }),
+      chrome.runtime.sendMessage({
+        action: 'getHistory'
+      })
+    ]);
 
-    if (response.error) {
-      throw new Error(response.error);
+    if (connectionsResponse.error) {
+      throw new Error(connectionsResponse.error);
     }
 
-    displayConnections(response.connections, response.totalArticles || 0);
+    displayConnections(
+      connectionsResponse.connections,
+      connectionsResponse.totalArticles || 0,
+      historyResponse.articles || []
+    );
   } catch (error) {
     console.error('Failed to load connections:', error);
-    displayConnections([], 0);
+    displayConnections([], 0, []);
   }
 }
 
-function displayConnections(connections, totalArticles = 0) {
+function displayConnections(connections, totalArticles = 0, history = []) {
+  // Build history section
+  const historySection = history.length > 0 ? `
+    <div class="history-section">
+      <h3>Recent Articles</h3>
+      <p class="history-subtitle">Your DeepDive reading history</p>
+      <div class="history-list">
+        ${history.slice(0, 20).map((article, idx) => `
+          <a href="${article.url}" target="_blank" rel="noopener noreferrer" class="history-item">
+            <div class="history-item-content">
+              <div class="history-item-title">${article.title || 'Untitled'}</div>
+              <div class="history-item-meta">
+                <span class="history-item-source">${article.source}</span>
+                ${article.author ? `<span class="history-item-author">by ${article.author}</span>` : ''}
+                <span class="history-item-date">${new Date(article.analyzed_at).toLocaleDateString()}</span>
+              </div>
+            </div>
+            <span class="history-item-arrow">→</span>
+          </a>
+        `).join('')}
+      </div>
+    </div>
+  ` : '';
+
   if (!connections || connections.length === 0) {
     // Show onboarding/explanation if user hasn't read many articles yet
     if (totalArticles < 2) {
@@ -826,6 +1078,7 @@ function displayConnections(connections, totalArticles = 0) {
             <p class="connections-detail">You'll see connections after processing 2+ articles</p>
           </div>
         </div>
+        ${historySection}
       `;
     } else {
       // User has read multiple articles but no connections found for this one
@@ -836,6 +1089,7 @@ function displayConnections(connections, totalArticles = 0) {
           <p class="connections-detail">This article doesn't share topics, themes, or authors with the ${totalArticles} other articles you've analyzed this session.</p>
           <p class="connections-detail">Keep reading - connections will appear as your reading history grows!</p>
         </div>
+        ${historySection}
       `;
     }
     return;
@@ -884,8 +1138,9 @@ function displayConnections(connections, totalArticles = 0) {
       </div>
       ${connectedSourcesHtml}
     </div>
+    ${historySection}
   `;
-  
+
   document.getElementById('tab-connections').innerHTML = connectionsHtml;
 }
 

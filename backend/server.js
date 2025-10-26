@@ -191,6 +191,137 @@ List up to 5 related articles with explanation of the connection. Format as JSON
   }
 }
 
+// POST /analyze/stream - Analyze content with streaming summary
+app.post('/analyze/stream', async (req, res) => {
+  try {
+    const { url, content, type, metadata } = req.body;
+
+    if (!content || !url) {
+      return res.status(400).json({ error: 'Missing required fields: url, content' });
+    }
+
+    console.log(`Analyzing (streaming) ${type || 'page'}: ${url}`);
+
+    // Set up SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const cleanedContent = cleanContent(content);
+
+    // Send initial status
+    res.write(`data: ${JSON.stringify({ type: 'status', message: 'Starting analysis...' })}\n\n`);
+
+    // Start streaming summary from Gemini
+    res.write(`data: ${JSON.stringify({ type: 'status', message: 'Generating summary...' })}\n\n`);
+
+    let summary = '';
+    let bullets = [];
+
+    try {
+      const summaryData = await getSummaryFromGeminiStreaming(cleanedContent, metadata, (chunk) => {
+        // Send each chunk to the client
+        res.write(`data: ${JSON.stringify({ type: 'summary_chunk', text: chunk })}\n\n`);
+      });
+
+      summary = summaryData.summary;
+      bullets = summaryData.bullets;
+
+      res.write(`data: ${JSON.stringify({ type: 'summary_complete', summary, bullets })}\n\n`);
+    } catch (error) {
+      console.error('Summary error:', error);
+      res.write(`data: ${JSON.stringify({ type: 'error', field: 'summary', message: 'Summary failed' })}\n\n`);
+    }
+
+    // Now get credibility with streaming
+    res.write(`data: ${JSON.stringify({ type: 'status', message: 'Analyzing credibility...' })}\n\n`);
+
+    let credibility;
+    try {
+      credibility = await getCredibilityFromClaudeStreaming(cleanedContent, metadata, url, (chunk) => {
+        // Send each chunk to the client
+        res.write(`data: ${JSON.stringify({ type: 'credibility_chunk', text: chunk })}\n\n`);
+      });
+
+      res.write(`data: ${JSON.stringify({ type: 'credibility_complete', credibility })}\n\n`);
+    } catch (error) {
+      console.error('Credibility error:', error);
+      credibility = {
+        score: 0.5,
+        label: 'Unknown',
+        overall_assessment: 'Credibility analysis temporarily unavailable.'
+      };
+      res.write(`data: ${JSON.stringify({ type: 'credibility_complete', credibility })}\n\n`);
+    }
+
+    // Fact check
+    res.write(`data: ${JSON.stringify({ type: 'status', message: 'Fact checking...' })}\n\n`);
+
+    const factCheck = await factCheckArticle(cleanedContent, metadata).catch(err => ({
+      claims: [],
+      summary: 'Fact check unavailable'
+    }));
+
+    res.write(`data: ${JSON.stringify({ type: 'fact_check_complete', fact_check: factCheck })}\n\n`);
+
+    // Store in memory and cache
+    const cacheKey = getCacheKey(url);
+    const conversationId = uuidv4();
+
+    const result = {
+      summary,
+      bullets,
+      credibility,
+      fact_check: factCheck,
+      source_meta: metadata,
+      conversation_id: conversationId,
+      type: type || 'article'
+    };
+
+    cache.set(cacheKey, result);
+    conversations.set(conversationId, {
+      url,
+      content: cleanedContent,
+      metadata,
+      messages: [],
+      createdAt: new Date()
+    });
+
+    // Store in article memory
+    const articleData = {
+      url,
+      title: metadata?.title || 'Untitled',
+      author: metadata?.author,
+      published_at: metadata?.published_at,
+      type: type || 'article',
+      summary,
+      analyzed_at: new Date()
+    };
+
+    const topics = await extractTopics(summary, bullets);
+    articleMemory.set(url, articleData);
+
+    topics.forEach(topic => {
+      if (!topicIndex.has(topic)) {
+        topicIndex.set(topic, []);
+      }
+      topicIndex.get(topic).push(url);
+    });
+
+    const allArticles = Array.from(articleMemory.values());
+    const connections = await findConnections(articleData, allArticles);
+    articleConnections.set(cacheKey, connections);
+
+    res.write(`data: ${JSON.stringify({ type: 'complete', conversation_id: conversationId })}\n\n`);
+    res.end();
+
+  } catch (error) {
+    console.error('Error in /analyze/stream:', error);
+    res.write(`data: ${JSON.stringify({ type: 'error', message: error.message })}\n\n`);
+    res.end();
+  }
+});
+
 // POST /analyze - Analyze content with Gemini + Claude
 app.post('/analyze', async (req, res) => {
   try {
@@ -348,9 +479,14 @@ app.post('/chat', async (req, res) => {
     }
 
     const conversation = conversations.get(conversation_id);
-    
+
     if (!conversation) {
       return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    // Ensure messages array exists
+    if (!conversation.messages) {
+      conversation.messages = [];
     }
 
     console.log(`Chat message for conversation ${conversation_id} (length: ${response_length || 'auto'})`);
@@ -379,6 +515,60 @@ app.post('/chat', async (req, res) => {
     });
   }
 });
+
+// Helper: Get summary from Gemini with streaming
+async function getSummaryFromGeminiStreaming(content, metadata, onChunk) {
+  try {
+    if (!process.env.GOOGLE_API_KEY || process.env.GOOGLE_API_KEY === 'your_gemini_api_key_here') {
+      throw new Error('Gemini API key not configured');
+    }
+
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    const prompt = `You extract factual summaries from source material. You do not add external facts.
+
+SOURCE METADATA:
+Title: ${metadata?.title || 'Unknown'}
+Author: ${metadata?.author || 'Unknown'}
+Published: ${metadata?.published_at || 'Unknown'}
+
+FULL TEXT:
+${content}
+
+TASK:
+1. Give a 2-3 sentence plain-English summary of the source. No hype.
+2. Give 5 concise bullet points of the main claims/conclusions from the source, using ONLY what appears in the source.
+3. Return valid JSON with:
+{
+  "summary": "...",
+  "bullets": ["...", "...", "...", "...", "..."]
+}
+
+Return ONLY the JSON, no other text.`;
+
+    const result = await model.generateContentStream(prompt);
+    let fullText = '';
+
+    for await (const chunk of result.stream) {
+      const chunkText = chunk.text();
+      fullText += chunkText;
+      if (onChunk) {
+        onChunk(chunkText);
+      }
+    }
+
+    // Parse JSON from complete response
+    const jsonMatch = fullText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+
+    throw new Error('Failed to parse Gemini response');
+  } catch (error) {
+    console.error('Gemini streaming error:', error.message);
+    throw error;
+  }
+}
 
 // Helper: Get summary from Gemini
 async function getSummaryFromGemini(content, metadata) {
@@ -413,13 +603,13 @@ Return ONLY the JSON, no other text.`;
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
-    
+
     // Parse JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
     }
-    
+
     throw new Error('Failed to parse Gemini response');
   } catch (error) {
     console.error('Gemini error:', error.message);
@@ -581,6 +771,152 @@ Focus on verifiable factual claims (statistics, events, data, statements of fact
       claims: [],
       sources: []
     };
+  }
+}
+
+// Helper: Get credibility from Claude with streaming
+async function getCredibilityFromClaudeStreaming(content, metadata, url, onChunk) {
+  try {
+    // First, search for author information online using Gemini
+    let authorInfoText = '';
+    let authorSources = [];
+
+    if (metadata?.author && metadata.author !== 'Unknown') {
+      console.log(`🔍 Searching web for author: ${metadata.author}`);
+      const searchResults = await searchAuthorInfo(metadata.author, metadata?.source);
+
+      if (searchResults && searchResults.summary) {
+        console.log(`✅ Found information about author with ${searchResults.sources.length} sources`);
+        authorSources = searchResults.sources;
+        authorInfoText = '\n\nWEB RESEARCH ABOUT THE AUTHOR:\n';
+        authorInfoText += searchResults.summary + '\n\n';
+
+        if (searchResults.sources.length > 0) {
+          authorInfoText += 'SOURCES:\n';
+          searchResults.sources.forEach((source, idx) => {
+            authorInfoText += `[${idx + 1}] ${source.title}\nURL: ${source.url}\n\n`;
+          });
+        }
+      } else {
+        console.log('⚠️  No web results found for author');
+      }
+    }
+
+    const prompt = `You are a careful media literacy assistant. You assess credibility and bias in three layers: Website, Author, and Content. Be specific and calm.
+
+METADATA:
+Source: ${metadata?.source || new URL(url).hostname}
+Author: ${metadata?.author || 'Unknown'}
+Channel: ${metadata?.channel || 'Unknown'}
+Published: ${metadata?.published_at || 'Unknown'}
+
+ARTICLE CONTENT:
+${content.substring(0, 6000)}
+${authorInfoText}
+
+TASK - Perform a THREE-TIER analysis:
+
+TIER 1: WEBSITE/SOURCE ANALYSIS
+Analyze the publication/platform itself:
+- What type of source is this? (Major news outlet, blog, academic, etc.)
+- What is its general reputation and track record?
+- Known editorial standards or biases?
+- Funding model and potential conflicts?
+
+TIER 2: AUTHOR ANALYSIS
+${authorSources.length > 0 ?
+  `Using the WEB RESEARCH provided above:
+- What expertise or credentials does the author have? [cite with [1], [2]]
+- Professional background and history? [cite]
+- Established journalist, blogger, academic, or content creator?
+- Any conflicts of interest or biases? [cite]` :
+  `Based on the article content and writing style:
+- What type of author does this appear to be?
+- What expertise is evident from the writing?
+- Any biases evident in the writing style?`}
+
+TIER 3: ARTICLE CONTENT ANALYSIS
+Analyze THIS specific article's reliability:
+- Quality of evidence and citations in THIS article
+- Emotional/manipulative language vs neutral reporting
+- Factual claims vs speculation/opinion
+- Logical reasoning and argumentation quality
+- Balance and fairness in presenting information
+
+FINAL RATING:
+Combine all three tiers to give an overall credibility score 0.0-1.0 and label.
+
+Return JSON:
+{
+  "score": 0.82,
+  "label": "Reliable",
+  "overall_assessment": "Brief 2-3 sentence summary of overall credibility",
+  "website_analysis": {
+    "type": "Major news outlet / Blog / Academic / etc.",
+    "reputation": "Assessment of source's general credibility",
+    "editorial_standards": "Known standards or lack thereof",
+    "potential_conflicts": "Funding, ownership, or bias concerns"
+  },
+  "author_analysis": {
+    "expertise": "Assessment with citations like [1] or [2]",
+    "background": "Professional history with citations",
+    "reputation_signals": "Credibility indicators with citations",
+    "potential_bias": "Author-specific biases with citations"
+  },
+  "content_analysis": {
+    "evidence_quality": "How well is this article supported?",
+    "tone": "Neutral reporting vs emotional/opinion",
+    "fact_vs_opinion": "Balance of factual vs speculative claims",
+    "logical_reasoning": "Quality of argumentation",
+    "balance": "Fairness in presenting different perspectives"
+  }
+}
+
+IMPORTANT: Cite author research sources using [1], [2], [3].
+Return ONLY the JSON, no other text.`;
+
+    const stream = await anthropic.messages.stream({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 2048,
+      messages: [{
+        role: 'user',
+        content: prompt
+      }]
+    });
+
+    let fullText = '';
+
+    for await (const chunk of stream) {
+      if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+        const chunkText = chunk.delta.text;
+        fullText += chunkText;
+        if (onChunk) {
+          onChunk(chunkText);
+        }
+      }
+    }
+
+    // Parse JSON from complete response
+    const jsonMatch = fullText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const result = JSON.parse(jsonMatch[0]);
+
+      // Add actual source URLs to the response
+      if (authorSources.length > 0) {
+        result.author_sources = authorSources.map((source, idx) => ({
+          index: idx + 1,
+          title: source.title,
+          url: source.url
+        }));
+      }
+
+      return result;
+    }
+
+    throw new Error('Failed to parse Claude response');
+  } catch (error) {
+    console.error('Claude credibility streaming error:', error);
+    throw error;
   }
 }
 
@@ -968,14 +1304,16 @@ ${sourceContent.substring(0, 6000)}`;
 
     // Build conversation messages
     const messages = [];
-    
+
     // Add conversation history
-    conversationHistory.forEach(msg => {
-      messages.push({
-        role: msg.role === 'assistant' ? 'assistant' : 'user',
-        content: msg.text
+    if (conversationHistory && Array.isArray(conversationHistory)) {
+      conversationHistory.forEach(msg => {
+        messages.push({
+          role: msg.role === 'assistant' ? 'assistant' : 'user',
+          content: msg.text
+        });
       });
-    });
+    }
     
     // Add current user message
     messages.push({
