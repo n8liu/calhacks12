@@ -743,18 +743,106 @@
 
 .connections-empty p {
   margin: 8px 0;
-  color: #6b7280;
+  color: var(--text-secondary);
 }
 
 .connections-empty p:first-child {
   font-size: 16px;
   font-weight: 600;
-  color: #374151;
+  color: var(--text-primary);
 }
 
 .connections-detail {
   font-size: 13px;
   line-height: 1.5;
+}
+
+/* Connections Onboarding */
+.connections-onboarding {
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.connections-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.8;
+}
+
+.connections-onboarding h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 8px 0;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.connections-onboarding .connections-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0 0 32px 0;
+}
+
+.connections-how-it-works,
+.connections-suggestions {
+  text-align: left;
+  margin: 24px 0;
+  padding: 20px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.connections-how-it-works h4,
+.connections-suggestions h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 12px 0;
+}
+
+.connections-how-it-works ul,
+.connections-suggestions ul {
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc;
+}
+
+.connections-how-it-works li,
+.connections-suggestions li {
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.connections-how-it-works li strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.connections-count {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-color);
+}
+
+.connections-count p {
+  margin: 8px 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.connections-count strong {
+  color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.connections-empty .connections-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  opacity: 0.6;
 }
 
 .connections-list {

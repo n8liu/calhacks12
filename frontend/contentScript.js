@@ -781,31 +781,63 @@ async function loadConnections(url) {
       action: 'getConnections',
       data: { urlHash }
     });
-    
+
     if (response.error) {
       throw new Error(response.error);
     }
-    
-    displayConnections(response.connections);
+
+    displayConnections(response.connections, response.totalArticles || 0);
   } catch (error) {
     console.error('Failed to load connections:', error);
-    document.getElementById('tab-connections').innerHTML = `
-      <div class="connections-empty">
-        <p>No connections found yet</p>
-        <p class="connections-detail">As you read more articles, DeepDive will discover connections between them based on topics, authors, and themes.</p>
-      </div>
-    `;
+    displayConnections([], 0);
   }
 }
 
-function displayConnections(connections) {
+function displayConnections(connections, totalArticles = 0) {
   if (!connections || connections.length === 0) {
-    document.getElementById('tab-connections').innerHTML = `
-      <div class="connections-empty">
-        <p>No connections found yet</p>
-        <p class="connections-detail">As you read more articles, DeepDive will discover connections between them based on topics, authors, and themes.</p>
-      </div>
-    `;
+    // Show onboarding/explanation if user hasn't read many articles yet
+    if (totalArticles < 2) {
+      document.getElementById('tab-connections').innerHTML = `
+        <div class="connections-onboarding">
+          <div class="connections-icon">🔗</div>
+          <h3>Discover Content Connections</h3>
+          <p class="connections-subtitle">DeepDive will find meaningful connections between articles you read</p>
+
+          <div class="connections-how-it-works">
+            <h4>How it works:</h4>
+            <ul>
+              <li><strong>Shared Topics</strong> - Links articles covering similar subjects</li>
+              <li><strong>Same Authors</strong> - Tracks content from authors you've read before</li>
+              <li><strong>Related Themes</strong> - Discovers conceptual connections across different sources</li>
+            </ul>
+          </div>
+
+          <div class="connections-suggestions">
+            <h4>Get started:</h4>
+            <ul>
+              <li>Continue reading articles and videos</li>
+              <li>Analyze content from different sources</li>
+              <li>Return to this tab to see connections emerge</li>
+            </ul>
+          </div>
+
+          <div class="connections-count">
+            <p>Articles analyzed this session: <strong>${totalArticles}</strong></p>
+            <p class="connections-detail">You'll see connections after processing 2+ articles</p>
+          </div>
+        </div>
+      `;
+    } else {
+      // User has read multiple articles but no connections found for this one
+      document.getElementById('tab-connections').innerHTML = `
+        <div class="connections-empty">
+          <div class="connections-icon">🔍</div>
+          <p>No connections found for this article yet</p>
+          <p class="connections-detail">This article doesn't share topics, themes, or authors with the ${totalArticles} other articles you've analyzed this session.</p>
+          <p class="connections-detail">Keep reading - connections will appear as your reading history grows!</p>
+        </div>
+      `;
+    }
     return;
   }
   

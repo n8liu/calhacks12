@@ -1016,15 +1016,18 @@ app.get('/connections/:urlHash', (req, res) => {
   try {
     const { urlHash } = req.params;
     const connections = articleConnections.get(urlHash) || [];
-    
+
     // Get full article data for connections
     const connectedArticles = connections.map(conn => ({
       ...articleMemory.get(conn.url),
       connectionReason: conn.reason,
       connectionStrength: conn.strength
     })).filter(Boolean);
-    
-    res.json({ connections: connectedArticles });
+
+    res.json({
+      connections: connectedArticles,
+      totalArticles: articleMemory.size
+    });
   } catch (error) {
     console.error('Error in /connections:', error);
     res.status(500).json({ error: 'Failed to get connections' });
