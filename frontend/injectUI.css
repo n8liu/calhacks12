@@ -317,6 +317,25 @@
   color: #374151;
 }
 
+.citation-link {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 600;
+  padding: 0 2px;
+  transition: all 0.2s;
+  border-radius: 3px;
+}
+
+.citation-link:hover {
+  color: #1d4ed8;
+  background: #dbeafe;
+  text-decoration: none;
+}
+
+.citation-link:active {
+  background: #bfdbfe;
+}
+
 /* Author Sources */
 .author-sources {
   margin-top: 20px;

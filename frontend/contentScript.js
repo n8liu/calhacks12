@@ -338,6 +338,21 @@ async function analyzeCurrentPage() {
 }
 
 function displayResults(data) {
+  // Helper function to make citations clickable
+  const makeCitationsClickable = (text, sources) => {
+    if (!sources || sources.length === 0) return text;
+    
+    // Replace [1], [2], etc. with clickable links
+    return text.replace(/\[(\d+)\]/g, (match, num) => {
+      const sourceIndex = parseInt(num) - 1;
+      if (sourceIndex < sources.length) {
+        const source = sources[sourceIndex];
+        return `<a href="${source.url}" target="_blank" rel="noopener noreferrer" class="citation-link" title="${source.title}">[${num}]</a>`;
+      }
+      return match;
+    });
+  };
+  
   // Display summary
   document.getElementById('tab-summary').innerHTML = `
     <div class="summary-content">
@@ -406,19 +421,19 @@ function displayResults(data) {
         <div class="author-info">
           <div class="author-field">
             <strong>👤 Expertise</strong>
-            <p>${author.expertise}</p>
+            <p>${makeCitationsClickable(author.expertise, data.credibility.author_sources)}</p>
           </div>
           <div class="author-field">
             <strong>📋 Background</strong>
-            <p>${author.background}</p>
+            <p>${makeCitationsClickable(author.background, data.credibility.author_sources)}</p>
           </div>
           <div class="author-field">
             <strong>✓ Reputation Signals</strong>
-            <p>${author.reputation_signals}</p>
+            <p>${makeCitationsClickable(author.reputation_signals, data.credibility.author_sources)}</p>
           </div>
           <div class="author-field">
             <strong>⚠️ Potential Bias</strong>
-            <p>${author.potential_bias}</p>
+            <p>${makeCitationsClickable(author.potential_bias, data.credibility.author_sources)}</p>
           </div>
         </div>
         ${sourcesHtml}
@@ -437,7 +452,7 @@ function displayResults(data) {
       </div>
       <div class="credibility-explanation">
         <h3>Overall Assessment</h3>
-        <p>${data.credibility.why}</p>
+        <p>${makeCitationsClickable(data.credibility.why, data.credibility.author_sources)}</p>
       </div>
       ${authorSection}
     </div>
