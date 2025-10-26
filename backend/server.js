@@ -846,11 +846,25 @@ Analyze THIS specific article's reliability:
 FINAL RATING:
 Combine all three tiers to give an overall credibility score 0.0-1.0 and label.
 
+SCORING BREAKDOWN:
+Also provide individual scores (0.0-1.0) for each tier:
+- website_score: Credibility of the source/publication (0.0-1.0)
+- author_score: Author expertise and credibility (0.0-1.0)
+- content_score: Quality of this specific article (0.0-1.0)
+
+The overall score should be a weighted combination of these three scores.
+
 Return JSON:
 {
   "score": 0.82,
   "label": "Reliable",
   "overall_assessment": "Brief 2-3 sentence summary of overall credibility",
+  "score_breakdown": {
+    "website_score": 0.85,
+    "author_score": 0.80,
+    "content_score": 0.82,
+    "explanation": "Brief explanation of how scores were weighted"
+  },
   "website_analysis": {
     "type": "Major news outlet / Blog / Academic / etc.",
     "reputation": "Assessment of source's general credibility",
@@ -992,11 +1006,25 @@ Analyze THIS specific article's reliability:
 FINAL RATING:
 Combine all three tiers to give an overall credibility score 0.0-1.0 and label.
 
+SCORING BREAKDOWN:
+Also provide individual scores (0.0-1.0) for each tier:
+- website_score: Credibility of the source/publication (0.0-1.0)
+- author_score: Author expertise and credibility (0.0-1.0)
+- content_score: Quality of this specific article (0.0-1.0)
+
+The overall score should be a weighted combination of these three scores.
+
 Return JSON:
 {
   "score": 0.82,
   "label": "Reliable",
   "overall_assessment": "Brief 2-3 sentence summary of overall credibility",
+  "score_breakdown": {
+    "website_score": 0.85,
+    "author_score": 0.80,
+    "content_score": 0.82,
+    "explanation": "Brief explanation of how scores were weighted"
+  },
   "website_analysis": {
     "type": "Major news outlet / Blog / Academic / etc.",
     "reputation": "Assessment of source's general credibility",

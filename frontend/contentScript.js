@@ -8,6 +8,7 @@ let currentData = null;
 let streamingText = '';
 let credibilityStreamingText = '';
 let streamingData = {};
+let selectedTextForChat = '';
 
 // Listen for streaming updates from background
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -93,9 +94,16 @@ function injectUI() {
             <option value="detailed">Detailed (~300 words)</option>
           </select>
         </div>
+        <div id="selected-text-indicator" class="selected-text-indicator hidden">
+          <div class="selected-text-header">
+            <span class="selected-text-label">✏️ Selected text:</span>
+            <button id="clear-selection" class="clear-selection-btn" title="Clear selection">×</button>
+          </div>
+          <div id="selected-text-content" class="selected-text-content"></div>
+        </div>
         <div id="chat-history"></div>
         <div class="chat-input-container">
-          <input type="text" id="chat-input" placeholder="Ask anything about this page...">
+          <input type="text" id="chat-input" placeholder="Highlight text on page, then ask about it...">
           <button id="chat-send">Send</button>
         </div>
       </div>
@@ -128,7 +136,14 @@ function injectUI() {
   document.getElementById('chat-input').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') sendChatMessage();
   });
-  
+
+  // Clear selection button
+  document.getElementById('clear-selection').addEventListener('click', clearSelectedText);
+
+  // Listen for text selection on the page
+  document.addEventListener('mouseup', handleTextSelection);
+  document.addEventListener('selectionchange', handleTextSelection);
+
   isUIInjected = true;
 }
 
@@ -270,9 +285,66 @@ function toggleSidebar() {
 function switchTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-  
+
   document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
   document.getElementById(`tab-${tabName}`).classList.add('active');
+}
+
+// Handle text selection on the page
+function handleTextSelection() {
+  // Don't capture selections inside the DeepDive UI
+  const selection = window.getSelection();
+  const selectedText = selection.toString().trim();
+
+  if (!selectedText) return;
+
+  // Check if selection is inside our extension UI
+  const range = selection.getRangeAt(0);
+  const container = range.commonAncestorContainer;
+  const deepDiveRoot = document.getElementById('smart-summary-root');
+
+  if (deepDiveRoot && deepDiveRoot.contains(container)) {
+    return; // Don't capture text selected within our UI
+  }
+
+  // Store the selected text
+  if (selectedText.length > 5 && selectedText.length < 5000) {
+    selectedTextForChat = selectedText;
+    updateSelectedTextIndicator();
+  }
+}
+
+// Update the selected text indicator in the chat tab
+function updateSelectedTextIndicator() {
+  const indicator = document.getElementById('selected-text-indicator');
+  const content = document.getElementById('selected-text-content');
+
+  if (!indicator || !content) return;
+
+  if (selectedTextForChat) {
+    indicator.classList.remove('hidden');
+
+    // Truncate if too long for display
+    const displayText = selectedTextForChat.length > 200
+      ? selectedTextForChat.substring(0, 200) + '...'
+      : selectedTextForChat;
+
+    content.textContent = `"${displayText}"`;
+  } else {
+    indicator.classList.add('hidden');
+    content.textContent = '';
+  }
+}
+
+// Clear selected text
+function clearSelectedText() {
+  selectedTextForChat = '';
+  updateSelectedTextIndicator();
+
+  // Also clear the browser's selection
+  if (window.getSelection) {
+    window.getSelection().removeAllRanges();
+  }
 }
 
 function initTheme() {
@@ -623,9 +695,55 @@ async function analyzeCurrentPage() {
   }
 }
 
+// Build score breakdown section
+function buildScoreBreakdown(credibility) {
+  if (!credibility.score_breakdown) return '';
+
+  const breakdown = credibility.score_breakdown;
+
+  // Helper to get color based on score
+  const getScoreColor = (score) => {
+    const percent = Math.round(score * 100);
+    if (percent >= 75) return '#059669'; // Green
+    if (percent >= 50) return '#d97706'; // Amber
+    return '#dc2626'; // Red
+  };
+
+  // Helper to create progress bar
+  const createProgressBar = (label, score, description) => {
+    const percent = Math.round(score * 100);
+    const color = getScoreColor(score);
+
+    return `
+      <div class="score-breakdown-item">
+        <div class="score-breakdown-header">
+          <span class="score-breakdown-label">${label}</span>
+          <span class="score-breakdown-value" style="color: ${color}">${percent}/100</span>
+        </div>
+        <div class="score-breakdown-bar-container">
+          <div class="score-breakdown-bar" style="width: ${percent}%; background: ${color}"></div>
+        </div>
+        ${description ? `<div class="score-breakdown-description">${description}</div>` : ''}
+      </div>
+    `;
+  };
+
+  return `
+    <div class="score-breakdown-section">
+      <h3>📊 How This Score Was Calculated</h3>
+      <p class="score-breakdown-intro">${breakdown.explanation || 'Score based on three-tier analysis of source, author, and content.'}</p>
+      <div class="score-breakdown-grid">
+        ${createProgressBar('Source Credibility', breakdown.website_score, 'Reputation and standards of the publication')}
+        ${createProgressBar('Author Expertise', breakdown.author_score, 'Author credentials and track record')}
+        ${createProgressBar('Content Quality', breakdown.content_score, 'Evidence, tone, and reasoning in this article')}
+      </div>
+    </div>
+  `;
+}
+
 function buildAllSourcesSection(data) {
   const allSources = [];
-  
+
   // Add original article
   allSources.push({
     title: data.source_meta?.title || document.title || 'Original Article',
@@ -974,6 +1092,7 @@ function displayResults(data) {
         <h3>Overall Assessment</h3>
         <p>${makeCitationsClickable(data.credibility.overall_assessment || data.credibility.why || 'Analysis in progress...', data.credibility.author_sources)}</p>
       </div>
+      ${buildScoreBreakdown(data.credibility)}
       ${factCheckSection}
       ${websiteSection}
       ${authorSection}
@@ -1309,23 +1428,39 @@ function shareSummary(data) {
 async function sendChatMessage() {
   const input = document.getElementById('chat-input');
   const message = input.value.trim();
-  
+
   if (!message || !currentData) return;
-  
+
   // Get selected response length from dropdown
   const selectedLength = document.getElementById('response-length-select')?.value || 'auto';
-  
+
+  // Build the display message
+  let displayMessage = message;
+  let fullMessage = message;
+
+  // If there's selected text, include it in the context
+  if (selectedTextForChat) {
+    displayMessage = `
+      <div class="chat-selected-context">
+        <div class="chat-selected-label">📌 About selected text:</div>
+        <div class="chat-selected-quote">"${selectedTextForChat.substring(0, 150)}${selectedTextForChat.length > 150 ? '...' : ''}"</div>
+      </div>
+      <p>${message}</p>
+    `;
+    fullMessage = `Regarding this selected text from the article:\n\n"${selectedTextForChat}"\n\n${message}`;
+  }
+
   // Add user message to chat
   const chatHistory = document.getElementById('chat-history');
   chatHistory.innerHTML += `
     <div class="message user-message">
-      <p>${message}</p>
+      ${displayMessage}
     </div>
   `;
-  
+
   input.value = '';
   chatHistory.scrollTop = chatHistory.scrollHeight;
-  
+
   // Add loading indicator
   chatHistory.innerHTML += `
     <div class="message assistant-message loading-message">
@@ -1335,13 +1470,13 @@ async function sendChatMessage() {
       <p class="loading-text" style="margin-top: 8px; font-size: 13px;">Thinking...</p>
     </div>
   `;
-  
+
   try {
     const response = await chrome.runtime.sendMessage({
       action: 'chat',
       data: {
         conversation_id: currentData.conversation_id,
-        user_message: message,
+        user_message: fullMessage, // Use fullMessage with selected text context
         response_length: selectedLength
       }
     });
@@ -1360,7 +1495,10 @@ async function sendChatMessage() {
       </div>
     `;
     chatHistory.scrollTop = chatHistory.scrollHeight;
-    
+
+    // Clear selected text after successful response
+    clearSelectedText();
+
   } catch (error) {
     console.error('Chat failed:', error);
     document.querySelector('.loading-message').innerHTML = `
