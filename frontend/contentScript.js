@@ -48,6 +48,15 @@ function injectUI() {
         <div class="loading">Finding connections...</div>
       </div>
       <div id="tab-chat" class="tab-content">
+        <div class="chat-controls">
+          <label for="response-length-select">Response length:</label>
+          <select id="response-length-select" class="response-length-select">
+            <option value="auto" selected>Auto (AI decides)</option>
+            <option value="short">Shorter (~75 words)</option>
+            <option value="default">Default (~150 words)</option>
+            <option value="detailed">Detailed (~300 words)</option>
+          </select>
+        </div>
         <div id="chat-history"></div>
         <div class="chat-input-container">
           <input type="text" id="chat-input" placeholder="Ask anything about this page...">
@@ -59,8 +68,11 @@ function injectUI() {
   container.appendChild(sidebar);
   
   // Add event listeners
-  floatingButton.addEventListener('click', toggleSidebar);
+  floatingButton.addEventListener('click', handleButtonClick);
   document.getElementById('smart-summary-close').addEventListener('click', toggleSidebar);
+  
+  // Make button draggable
+  makeDraggable(floatingButton);
   
   // Tab switching
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -79,8 +91,133 @@ function injectUI() {
   isUIInjected = true;
 }
 
+// Make button draggable
+let isDragging = false;
+let hasMoved = false;
+let dragStartX = 0;
+let dragStartY = 0;
+
+function makeDraggable(element) {
+  let offsetX = 0;
+  let offsetY = 0;
+  
+  element.addEventListener('mousedown', function(e) {
+    isDragging = true;
+    hasMoved = false;
+    
+    const rect = element.getBoundingClientRect();
+    offsetX = e.clientX - rect.left;
+    offsetY = e.clientY - rect.top;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    
+    element.style.cursor = 'grabbing';
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  
+  document.addEventListener('mousemove', function(e) {
+    if (!isDragging) return;
+    
+    const x = e.clientX - offsetX;
+    const y = e.clientY - offsetY;
+    
+    // Constrain to viewport
+    const maxX = window.innerWidth - element.offsetWidth;
+    const maxY = window.innerHeight - element.offsetHeight;
+    
+    const constrainedX = Math.max(0, Math.min(x, maxX));
+    const constrainedY = Math.max(0, Math.min(y, maxY));
+    
+    element.style.left = constrainedX + 'px';
+    element.style.top = constrainedY + 'px';
+    element.style.right = 'auto';
+    
+    // Check if moved significantly
+    const deltaX = Math.abs(e.clientX - dragStartX);
+    const deltaY = Math.abs(e.clientY - dragStartY);
+    if (deltaX > 5 || deltaY > 5) {
+      hasMoved = true;
+    }
+    
+    e.preventDefault();
+  });
+  
+  document.addEventListener('mouseup', function(e) {
+    if (!isDragging) return;
+    
+    element.style.cursor = 'grab';
+    isDragging = false;
+    
+    // If didn't move much, treat as click
+    if (!hasMoved) {
+      toggleSidebar();
+    }
+    
+    hasMoved = false;
+  });
+  
+  // Touch support
+  element.addEventListener('touchstart', function(e) {
+    isDragging = true;
+    hasMoved = false;
+    
+    const rect = element.getBoundingClientRect();
+    const touch = e.touches[0];
+    offsetX = touch.clientX - rect.left;
+    offsetY = touch.clientY - rect.top;
+    dragStartX = touch.clientX;
+    dragStartY = touch.clientY;
+    
+    e.preventDefault();
+  });
+  
+  document.addEventListener('touchmove', function(e) {
+    if (!isDragging) return;
+    
+    const touch = e.touches[0];
+    const x = touch.clientX - offsetX;
+    const y = touch.clientY - offsetY;
+    
+    const maxX = window.innerWidth - element.offsetWidth;
+    const maxY = window.innerHeight - element.offsetHeight;
+    
+    const constrainedX = Math.max(0, Math.min(x, maxX));
+    const constrainedY = Math.max(0, Math.min(y, maxY));
+    
+    element.style.left = constrainedX + 'px';
+    element.style.top = constrainedY + 'px';
+    element.style.right = 'auto';
+    
+    const deltaX = Math.abs(touch.clientX - dragStartX);
+    const deltaY = Math.abs(touch.clientY - dragStartY);
+    if (deltaX > 5 || deltaY > 5) {
+      hasMoved = true;
+    }
+    
+    e.preventDefault();
+  });
+  
+  document.addEventListener('touchend', function(e) {
+    if (!isDragging) return;
+    
+    isDragging = false;
+    
+    if (!hasMoved) {
+      toggleSidebar();
+    }
+    
+    hasMoved = false;
+  });
+}
+
+function handleButtonClick(e) {
+  // Click is now handled in makeDraggable to distinguish from dragging
+}
+
 function toggleSidebar() {
   const sidebar = document.getElementById('smart-summary-sidebar');
+  
   sidebar.classList.toggle('smart-summary-hidden');
   
   // Analyze content when first opened
@@ -386,6 +523,9 @@ async function sendChatMessage() {
   
   if (!message || !currentData) return;
   
+  // Get selected response length from dropdown
+  const selectedLength = document.getElementById('response-length-select')?.value || 'auto';
+  
   // Add user message to chat
   const chatHistory = document.getElementById('chat-history');
   chatHistory.innerHTML += `
@@ -409,7 +549,8 @@ async function sendChatMessage() {
       action: 'chat',
       data: {
         conversation_id: currentData.conversation_id,
-        user_message: message
+        user_message: message,
+        response_length: selectedLength
       }
     });
     

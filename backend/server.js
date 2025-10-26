@@ -308,7 +308,7 @@ app.post('/analyze', async (req, res) => {
 // POST /chat - Chat about the content
 app.post('/chat', async (req, res) => {
   try {
-    const { conversation_id, user_message } = req.body;
+    const { conversation_id, user_message, response_length } = req.body;
 
     if (!conversation_id || !user_message) {
       return res.status(400).json({ error: 'Missing required fields: conversation_id, user_message' });
@@ -320,14 +320,15 @@ app.post('/chat', async (req, res) => {
       return res.status(404).json({ error: 'Conversation not found' });
     }
 
-    console.log(`Chat message for conversation ${conversation_id}`);
+    console.log(`Chat message for conversation ${conversation_id} (length: ${response_length || 'auto'})`);
 
     // Get response from Claude
     const assistantMessage = await chatWithClaude(
       conversation.content,
       conversation.metadata,
       conversation.messages,
-      user_message
+      user_message,
+      response_length || 'auto'
     );
 
     // Store messages
@@ -770,9 +771,19 @@ async function storeArticleInMemory(url, analysisResult, metadata) {
 }
 
 // Helper: Chat with Claude
-async function chatWithClaude(sourceContent, metadata, conversationHistory, userMessage) {
+async function chatWithClaude(sourceContent, metadata, conversationHistory, userMessage, responseLength = 'auto') {
   try {
-    const systemPrompt = `You are assisting the user in understanding ONE specific source (below). You must stay grounded in that source unless the user explicitly asks for general world knowledge. If the user asks "is this accurate?" you should say if the claim is supported in the text, and you may flag parts that sound speculative or biased, but you must say you are not verifying with outside sources. Keep answers under 150 words unless the user asks for more.
+    // Define length instructions based on user preference
+    const lengthInstructions = {
+      auto: 'Adjust your response length naturally based on the question complexity. Simple questions deserve brief answers, complex ones deserve thorough explanations.',
+      short: 'Keep answers concise and under 75 words. Be direct and to the point.',
+      default: 'Keep answers under 150 words unless the user asks for more.',
+      detailed: 'Provide comprehensive, thorough answers with examples and context. You may use up to 300 words when helpful.'
+    };
+    
+    const lengthInstruction = lengthInstructions[responseLength] || lengthInstructions.auto;
+    
+    const systemPrompt = `You are assisting the user in understanding ONE specific source (below). You must stay grounded in that source unless the user explicitly asks for general world knowledge. If the user asks "is this accurate?" you should say if the claim is supported in the text, and you may flag parts that sound speculative or biased, but you must say you are not verifying with outside sources. ${lengthInstruction}
 
 SOURCE:
 Title: ${metadata?.title || 'Unknown'}
